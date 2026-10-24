@@ -5,3 +5,6 @@
 /file
 /*.gpu
 .DS_Store
+runner_bin
+probe_bin
+*.bin
