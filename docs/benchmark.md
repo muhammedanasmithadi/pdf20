@@ -61,3 +61,50 @@ never a crash. The parser milestone (§7.5 object regime) drives the lexer
 per sourced object and keeps stream bytes opaque (§7.3.8.2), at which point
 the corpus sweep becomes a verdict-agreement comparison against
 `qpdf --check`.
+
+# Parser milestone — week 2 benchmark
+
+Date: 2026-10-25. Toolchain: Bend 2.0.39, native build (`-o`), single-core.
+
+## Method
+
+`runner.bend` reads argv[1] whole, lexes it (`lex.bend`, clause 7.2/7.3),
+then parses the object regime (`parser.bend`, clause 7.5), reporting
+`LEX: OK <tokens> <bytes> | PARSE: OK/CUT/ERR <objects> <bytes>`. Wall time
+around the process invocation.
+
+```sh
+bend runner.bend -o runner_bin
+./runner_bin file.pdf
+```
+
+## Results
+
+| Corpus | Files | Lexable | Parse OK | Parse CUT | Parse ERR | Parser crashes |
+|---|---|---|---|---|---|---|
+| pdf.js | 1,007 | 187 | 1 | 160 | 26 | 0 |
+| pdfbox | 137 | 16 | 0 | 11 | 5 | 0 |
+
+Every parse `ERR` cites an ISO 32000-2:2020 clause (7.3.1, 7.3.6, 7.3.7,
+7.3.10). Zero crashes on every lexable file in both corpora. The 3 files
+that crash (`filled-background.pdf`, `issue7847_radial.pdf`,
+`tiling-pattern-box.pdf`) overflow the lexer's `Nat` fuel (`2*ntok + 8`
+exceeds `2^48-1`) — a pre-existing lexer limit, not a parser defect.
+
+## Parser design (7.5 object regime)
+
+A second automaton mirrors the lexer: one self-recursive `pval(fuel, pst)`
+with an explicit frame stack (`FStart`/`FNum1`/`FNum2`/`FHead`/`FPost`/
+`FArr`/`FD`/`FBAD`), a `pend` field (`PNil`/`PN1`/`PN2`) that disambiguates
+`num gen R` references from bare numbers, and a `stop` slot carrying terminal
+answers (`POks`/`PCut`/`PErr`). Helpers return `PST` and never call back into
+`pval`, so there is no mutual recursion. Every token is consumed at most twice
+(flush + re-feed), so fuel `2*ntok + 8` covers the walk and the EOF check.
+Dictionary keys must be names (7.3.7); stream bodies stay opaque and end the
+walk at `PCut` (7.3.8.1). All rejections cite ISO 32000-2:2020 clauses.
+
+## Laws proved
+
+Nine golden parser laws in `LAWS.bend` (`par_empty`, `par_num_obj`,
+`par_ref_err` and six more), each with a `{==}` proof in `PROOF.bend`, passing
+both `bend PROOF.bend` and `bend PROOF.bend --verdict`.

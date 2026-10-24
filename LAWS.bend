@@ -9,6 +9,7 @@
 
 import Base
 import ./lex.bend as Pdf
+import ./parser.bend as P
 
 # Offset arithmetic in clause 7.5 runs on natural numbers (xref positions,
 # lengths, gaps). `x + 0 == x` is the first lemma every offset-normalization
@@ -42,3 +43,16 @@ law lex_name_gs:
 
 law lex_dict_open:
   {Pdf.lex(Con{60, Con{60, Nil{}}}) == Pdf.Lexed{Con{Pdf.TDict{True{}}, Nil{}}} : Pdf.Lex}
+
+# Golden laws for the parser (7.5 object regime). Inputs are raw byte codes;
+# pfile = lex + pval. A POks carries finished indirect objects (7.3.10);
+# a PErr cites the violated clause.
+
+law par_empty:
+  {P.pfile(Nil{}) == P.POks{Nil{}} : P.PRes}
+
+law par_num_obj:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{49, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.ONum{False{}, 12, 0n, 1n}}, Nil{}}} : P.PRes}
+
+law par_ref_err:
+  {P.pfile(Con{53, Con{32, Con{111, Con{98, Con{106, Nil{}}}}}}) == P.PErr{"generation number expected (7.3.10)"} : P.PRes}

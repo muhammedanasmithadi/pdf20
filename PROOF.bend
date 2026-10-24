@@ -33,3 +33,12 @@ def Laws.lex_name_gs():
 
 def Laws.lex_dict_open():
   {==}
+
+def Laws.par_empty():
+  {==}
+
+def Laws.par_num_obj():
+  {==}
+
+def Laws.par_ref_err():
+  {==}

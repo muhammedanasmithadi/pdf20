@@ -1,5 +1,6 @@
 import Base
 import ./lex.bend as Pdf
+import ./parser.bend as P
 
 # Benchmark entry: read one PDF path (argv[1]), lex it (clause 7.2/7.3),
 # report "OK <tokens> <bytes>" or "ERR <why> <bytes>" on one line.
@@ -37,6 +38,17 @@ def lex_rpt(rp: Pdf.Lex & U32) -> String:
     case Pdf.LexErr{why}:
       ((("ERR " ++ why) ++ " ") ++ U32.show(sz))
 
+# parse report line: unpack (PRes, size) at the parameter, then match
+def parse_rpt(rp: P.PRes & U32) -> String:
+  (pr, sz) = rp
+  match pr:
+    case P.POks{o}:
+      (("OK " ++ Nat.show(List.length(&2, P.BO, o))) ++ " objects " ++ U32.show(sz))
+    case P.PCut{o}:
+      (("CUT " ++ Nat.show(List.length(&2, P.BO, o))) ++ " objects " ++ U32.show(sz))
+    case P.PErr{why}:
+      (("ERR " ++ why) ++ " " ++ U32.show(sz))
+
 # main flow stages, dependency-first (defs bind in order)
 
 # stage 3: with the whole file in hand, lex it
@@ -71,8 +83,44 @@ def lex_file(path: List<&2, U32>) -> IO(Pdf.Lex & U32):
     ret : Pdf.Lex & U32 <- lex_size_exec(sfp)
     return ret
 
+# ---- parse stage: read the file whole, then parse it (clause 7.5)
+
+# stage 3: with the whole file in hand, parse it
+def parse_bytes_exec(rbp: File & Result<&1, &1, U32 & String, List<&2, U32>>, +sz: U32) -> IO(P.PRes & U32):
+  (f3, rres) = rbp
+  do IO<P.PRes & U32>:
+    bytes : List<&2, U32> <- IO.pass(List<&2, U32>, rres)
+    pr : P.PRes = P.pfile(bytes)
+    return (pr, sz)
+
+# stage 2: with the size known, read the file whole
+def parse_read_exec(f2: File, +sz: U32) -> IO(P.PRes & U32):
+  do IO<P.PRes & U32>:
+    rbp : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f2, sz)
+    ret : P.PRes & U32 <- parse_bytes_exec(rbp, sz)
+    return ret
+
+# stage 1: unpack the size report, thread the handle on
+def parse_size_exec(sfp: File & Result<&1, &1, U32 & String, U32>) -> IO(P.PRes & U32):
+  (f2, sres) = sfp
+  match sres:
+    case Fail{(code, msg)}:
+      IO.die(P.PRes & U32, code, msg)
+    case Done{sz}:
+      parse_read_exec(f2, sz)
+
+# stage 0: path in, file out
+def parse_file(path: List<&2, U32>) -> IO(P.PRes & U32):
+  do IO<P.PRes & U32>:
+    f1 : File <- IO.try(File, File.open_bytes(path, "r"))
+    sfp : File & Result<&1, &1, U32 & String, U32> <- File.size(f1)
+    ret : P.PRes & U32 <- parse_size_exec(sfp)
+    return ret
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    ret : Pdf.Lex & U32 <- lex_file(str_byts(arg1(args)))
-    IO.print(lex_rpt(ret))
+    +path_str : String = arg1(args)
+    lex_ret : Pdf.Lex & U32 <- lex_file(str_byts(path_str))
+    par_ret : P.PRes & U32 <- parse_file(str_byts(path_str))
+    IO.print((lex_rpt(lex_ret) ++ " | " ++ parse_rpt(par_ret)))
