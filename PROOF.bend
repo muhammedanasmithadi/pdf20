@@ -12,3 +12,24 @@ def Laws.nat_add_zero(x):
     case 1n+p:
       %Laws.nat_add_zero(p) : {1n+Nat.add(p, 0n) == 1n+_ : Nat}
       {==}
+
+def Laws.lex_empty():
+  {==}
+
+def Laws.lex_int12():
+  {==}
+
+def Laws.lex_ws_gap():
+  {==}
+
+def Laws.lex_comment():
+  {==}
+
+def Laws.lex_str_esc():
+  {==}
+
+def Laws.lex_name_gs():
+  {==}
+
+def Laws.lex_dict_open():
+  {==}
