@@ -20,4 +20,5 @@ nothing. Prefer `Data`-kinded types for PDF objects; streams keep their bytes
 opaque in v0.
 
 Toolchain: Bend 2.0.39 at `~/.bend/bin`; `export PATH="$HOME/.bend/bin:$PATH"`.
-`BEND_NO_TELEMETRY=1` in CI.
+`BEND_NO_TELEMETRY=1` in CI. `--verdict` additionally needs Lean v4.34.0 via
+elan: `export PATH="$HOME/.elan/bin:$PATH"`.
