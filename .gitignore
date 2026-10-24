@@ -1,0 +1,7 @@
+/node_modules/
+/corpus/
+/build/
+*.o
+/file
+/*.gpu
+.DS_Store
