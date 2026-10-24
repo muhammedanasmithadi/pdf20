@@ -1,6 +1,7 @@
 import Base
 import ./lex.bend as Pdf
 import ./parser.bend as P
+import ./xref.bend as X
 
 # Benchmark entry: read one PDF path (argv[1]), lex it (clause 7.2/7.3),
 # report "OK <tokens> <bytes>" or "ERR <why> <bytes>" on one line.
@@ -49,6 +50,15 @@ def parse_rpt(rp: P.PRes & U32) -> String:
     case P.PErr{why}:
       (("ERR " ++ why) ++ " " ++ U32.show(sz))
 
+# xref report line: unpack (XRes, size) at the parameter, then match
+def xref_rpt(rp: X.XRes & U32) -> String:
+  (xr, sz) = rp
+  match xr:
+    case X.XOK{table, trailer, startxref}:
+      (("XOK " ++ Nat.show(List.length(&2, X.XE, table))) ++ " entries, startxref=" ++ U32.show(startxref) ++ " " ++ U32.show(sz))
+    case X.XErr{why}:
+      (("ERR " ++ why) ++ " " ++ U32.show(sz))
+
 # main flow stages, dependency-first (defs bind in order)
 
 # stage 3: with the whole file in hand, lex it
@@ -81,6 +91,36 @@ def lex_file(path: List<&2, U32>) -> IO(Pdf.Lex & U32):
     f1 : File <- IO.try(File, File.open_bytes(path, "r"))
     sfp : File & Result<&1, &1, U32 & String, U32> <- File.size(f1)
     ret : Pdf.Lex & U32 <- lex_size_exec(sfp)
+    return ret
+
+# read whole file into bytes (shared by lex, parse, xref stages)
+def read_bytes_exec(rbp: File & Result<&1, &1, U32 & String, List<&2, U32>>, +sz: U32) -> IO(List<&2, U32>):
+  (f3, rres) = rbp
+  match rres:
+    case Fail{(code, msg)}:
+      IO.die(List<&2, U32>, code, msg)
+    case Done{bytes}:
+      IO.pure(List<&2, U32>, bytes)
+
+def read_read_exec(f2: File, +sz: U32) -> IO(List<&2, U32>):
+  do IO<List<&2, U32>>:
+    rbp : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f2, sz)
+    ret : List<&2, U32> <- read_bytes_exec(rbp, sz)
+    return ret
+
+def read_size_exec(sfp: File & Result<&1, &1, U32 & String, U32>) -> IO(List<&2, U32>):
+  (f2, sres) = sfp
+  match sres:
+    case Fail{(code, msg)}:
+      IO.die(List<&2, U32>, code, msg)
+    case Done{sz}:
+      read_read_exec(f2, sz)
+
+def read_file(path: List<&2, U32>) -> IO(List<&2, U32>):
+  do IO<List<&2, U32>>:
+    f1 : File <- IO.try(File, File.open_bytes(path, "r"))
+    sfp : File & Result<&1, &1, U32 & String, U32> <- File.size(f1)
+    ret : List<&2, U32> <- read_size_exec(sfp)
     return ret
 
 # ---- parse stage: read the file whole, then parse it (clause 7.5)
@@ -117,10 +157,59 @@ def parse_file(path: List<&2, U32>) -> IO(P.PRes & U32):
     ret : P.PRes & U32 <- parse_size_exec(sfp)
     return ret
 
+# ---- xref stage: read the file whole, then parse xref regime (clause 7.5.4)
+
+def xref_bytes_exec(rbp: File & Result<&1, &1, U32 & String, List<&2, U32>>, +sz: U32) -> IO(X.XRes & U32):
+  (f3, rres) = rbp
+  do IO<X.XRes & U32>:
+    bytes : List<&2, U32> <- IO.pass(List<&2, U32>, rres)
+    xr : X.XRes = X.xfile_bytes(bytes)
+    return (xr, sz)
+
+def xref_read_exec(f2: File, +sz: U32) -> IO(X.XRes & U32):
+  do IO<X.XRes & U32>:
+    rbp : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f2, sz)
+    ret : X.XRes & U32 <- xref_bytes_exec(rbp, sz)
+    return ret
+
+def xref_size_exec(sfp: File & Result<&1, &1, U32 & String, U32>) -> IO(X.XRes & U32):
+  (f2, sres) = sfp
+  match sres:
+    case Fail{(code, msg)}:
+      IO.die(X.XRes & U32, code, msg)
+    case Done{sz}:
+      xref_read_exec(f2, sz)
+
+def xref_file(path: List<&2, U32>) -> IO(X.XRes & U32):
+  do IO<X.XRes & U32>:
+    f1 : File <- IO.try(File, File.open_bytes(path, "r"))
+    sfp : File & Result<&1, &1, U32 & String, U32> <- File.size(f1)
+    ret : X.XRes & U32 <- xref_size_exec(sfp)
+    return ret
+
+def pf_pr(pr: P.PRes, rem: List<&2, Pdf.Tok>) -> String:
+  match pr:
+    case P.PCut{o}:
+      (("PCut " ++ Nat.show(List.length(&2, P.BO, o))) ++ " rem=" ++ Nat.show(List.length(&2, Pdf.Tok, rem)))
+    case P.POks{o}:
+      (("POks " ++ Nat.show(List.length(&2, P.BO, o))) ++ " rem=" ++ Nat.show(List.length(&2, Pdf.Tok, rem)))
+    case P.PErr{why}:
+      (("PErr " ++ why) ++ " rem=" ++ Nat.show(List.length(&2, Pdf.Tok, rem)))
+
+def pf_debug(px: P.PlxFull) -> String:
+  match px:
+    case P.PlxFull{pr, rem}:
+      pf_pr(pr, rem)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
     +path_str : String = arg1(args)
+    bytes : List<&2, U32> <- read_file(str_byts(path_str))
+    pf : P.PlxFull = P.pfile_full(bytes)
+    IO.print(pf_debug(pf))
     lex_ret : Pdf.Lex & U32 <- lex_file(str_byts(path_str))
     par_ret : P.PRes & U32 <- parse_file(str_byts(path_str))
-    IO.print((lex_rpt(lex_ret) ++ " | " ++ parse_rpt(par_ret)))
+    xref_ret : X.XRes & U32 <- xref_file(str_byts(path_str))
+    IO.print(((lex_rpt(lex_ret) ++ " | " ++ parse_rpt(par_ret)) ++ " | " ++ xref_rpt(xref_ret)))
+

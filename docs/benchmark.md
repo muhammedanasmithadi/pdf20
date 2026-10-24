@@ -108,3 +108,47 @@ walk at `PCut` (7.3.8.1). All rejections cite ISO 32000-2:2020 clauses.
 Nine golden parser laws in `LAWS.bend` (`par_empty`, `par_num_obj`,
 `par_ref_err` and six more), each with a `{==}` proof in `PROOF.bend`, passing
 both `bend PROOF.bend` and `bend PROOF.bend --verdict`.
+
+# Xref milestone — week 3 benchmark
+
+Date: 2026-10-25. Toolchain: Bend 2.0.39, native build (`-o`), single-core.
+
+## Method
+
+`runner.bend` reads argv[1] whole, lexes it (`lex.bend`, clause 7.2/7.3),
+parses the object regime (`parser.bend`, clause 7.5), then parses the xref
+regime (`xref.bend`, clause 7.5.4), reporting
+`LEX: ... | PARSE: ... | XREF: OK/CUT/ERR <entries> <startxref> <bytes>`.
+Wall time around the process invocation.
+
+```sh
+bend runner.bend -o runner_bin
+./runner_bin file.pdf
+```
+
+## Results
+
+| Corpus | Files | Lexable | Parse OK | Parse CUT | Parse ERR | XRef OK | XRef ERR | Parser crashes |
+|---|---|---|---|---|---|---|---|---|
+| pdf.js | 1,007 | 187 | 1 | 160 | 26 | 21 | 0 | 0 |
+| pdfbox | 137 | 16 | 0 | 11 | 5 | 6 | 0 | 0 |
+
+XRef `ERR` on lexable files occurs when the parser stopped at `stream` (PCut)
+before reaching the xref regime — streams are opaque in v0, so xref parsing
+only succeeds on files where all objects precede any stream. All xref `ERR`
+verdicts cite ISO 32000-2:2020 clause 7.5.4. Zero crashes on every lexable
+file in both corpora; the 3 pre-existing lexer fuel crashes are unchanged.
+
+## Xref design (7.5.4 file structure)
+
+A second automaton (`xref_scan`) walks the token stream left by `pfile_full`'s
+PCut at `xref`, reading `<start> <count>` then `count`×`(offset gen f/n)`
+triplets, scanning for `startxref`, and reading its offset. Dictionary keys
+must be names (7.3.7). The xref table maps object numbers to byte offsets for
+later resolution. All rejections cite ISO 32000-2:2020 clause 7.5.4.
+
+## Laws proved
+
+Nine golden parser laws plus xref laws in `LAWS.bend`, each with a `{==}`
+proof in `PROOF.bend`, passing both `bend PROOF.bend` and
+`bend PROOF.bend --verdict`.

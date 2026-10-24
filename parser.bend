@@ -436,7 +436,7 @@ def pdict(open: Bool, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: 
 # ---- words and regime boundaries (7.3.10, 7.3.8.1). Keyword flags are
 # computed here and passed as Bools to pword1 (no zero-param defs).
 
-def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstream: Bool, wendstream: Bool, wxref: Bool, wtrailer: Bool, wstartxref: Bool, toks: List<&2, Lx.Tok>, pend: Pend, acc: List<&2, BO>) -> PST:
+def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstream: Bool, wendstream: Bool, wxref: Bool, wtrailer: Bool, wstartxref: Bool, wxreg: Bool, toks: List<&2, Lx.Tok>, pend: Pend, acc: List<&2, BO>) -> PST:
   match f:
     case FNum2{x, y}:
       match wfval:
@@ -478,7 +478,13 @@ def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstre
           # `stream` between objects: PCut — stream stays opaque (7.3.8.1)
           PST{Some{PCut{List.reverse(&2, BO, acc)}}, toks, Con{f, t}, PNil{}, Nil{}}
         case False{}:
-          PST{None{}, toks, Con{FBAD{"indirect object definition expected (7.3.10)"}, t}, PNil{}, acc}
+          match wxreg:
+            case True{}:
+              # `xref`/`trailer`/`startxref` between objects: PCut — xref
+              # regime takes over (7.5 file structure)
+              PST{Some{PCut{List.reverse(&2, BO, acc)}}, toks, Con{f, t}, PNil{}, Nil{}}
+            case False{}:
+              PST{None{}, toks, Con{FBAD{"indirect object definition expected (7.3.10)"}, t}, PNil{}, acc}
     case FNum1{x}:
       PST{None{}, toks, Con{FBAD{"generation number expected (7.3.10)"}, t}, PNil{}, acc}
     case FBAD{why}:
@@ -527,7 +533,7 @@ def pword_r(is_obj: Bool, is_r: Bool, +w: String, pend: Pend, stk: List<&2, Fr>,
                 case Nil{}:
                   PST{None{}, tt, Con{FBAD{"object value expected (7.3.10)"}, Nil{}}, PNil{}, acc}
                 case Con{f, t}:
-                  pword1(w, f, t, False{}, String.eq(w, "endobj"), String.eq(w, "stream"), String.eq(w, "endstream"), String.eq(w, "xref"), String.eq(w, "trailer"), String.eq(w, "startxref"), tt, PNil{}, acc)
+                  pword1(w, f, t, False{}, String.eq(w, "endobj"), String.eq(w, "stream"), String.eq(w, "endstream"), String.eq(w, "xref"), String.eq(w, "trailer"), String.eq(w, "startxref"), (String.eq(w, "xref") || String.eq(w, "trailer") || String.eq(w, "startxref")), tt, PNil{}, acc)
             case PN1{a}:
               # flush `a`, then re-feed `w` with a cleared chain
               PST{None{}, Con{Lx.TWord{w}, tt}, pdisp(a, stk), PNil{}, acc}
@@ -670,6 +676,34 @@ def plx(lx: Lx.Lex) -> PRes:
 # pfile wires lex + pval (wrapper def; pval cannot take a computed Lex)
 def pfile(bytes: List<&2, U32>) -> PRes:
   plx(Lx.lex(bytes))
+
+# PlxFull: parse result + remaining tokens (for xref regime consumption)
+type PlxFull is Data:
+  PlxFull{pr: PRes, rem: List<&2, Lx.Tok>}
+
+# plx_done_full: extract PRes AND remaining tokens from final PST
+def plx_done_full(nxt: PST) -> PlxFull:
+  match nxt:
+    case PST{stop, toks, stk, pend, acc}:
+      match stop:
+        case Some{s}:
+          PlxFull{s, toks}
+        case None{}:
+          PlxFull{PErr{"walker ended without a stop answer (internal)"}, toks}
+
+# plx_full: lex + parse, returns PlxFull
+def plx_full(lx: Lx.Lex) -> PlxFull:
+  match lx:
+    case Lx.LexErr{why}:
+      PlxFull{PErr{why}, Nil{}}
+    case Lx.Lexed{+toks}:
+      n : Nat = List.length(&2, Lx.Tok, toks)
+      nxt : PST = pval((Nat.mul(n, 2n) + 8n : Nat), PST{None{}, toks, Con{FStart{}, Nil{}}, PNil{}, Nil{}})
+      plx_done_full(nxt)
+
+# pfile_full: lex + parse, returns PlxFull (pr + rem tokens for xref regime)
+def pfile_full(bytes: List<&2, U32>) -> PlxFull:
+  plx_full(Lx.lex(bytes))
 
 # ---- report + entry (runner.bend will extend this later)
 
