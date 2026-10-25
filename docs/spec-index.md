@@ -13,6 +13,8 @@ Errata page last updated 2026-03.
 | 7.1–7.2 | Conventions, lexical rules, whitespace, comments | lexer (comments skipped) |
 | 7.3 | Data types: booleans, numbers (real precision), strings (Tables 3), names, arrays, dictionaries, streams (Table 5), null | node types + parser |
 | 7.4 | Filters | streams stay opaque; only /Length checked |
+| 7.3.8 | Stream syntax (Table 5, Length, endstream) | lexer body-skip state; audit pass checks data against Length, ≤2 extra EOL bytes (7.3.8.2)
+| 7.5.8 | Cross-reference streams (Tables 17–18) | raw unfiltered decode: W/Size/Index checks, big-endian rows, dict doubles as trailer; Filter/type-2/multi-XRef diagnostics
 | 7.5 | File structure: header, indirect objects, xref tables (Table 15 trailer, Table 17–18 xref streams, Table 19 hybrid reference), object streams, incremental updates | resolver + merge |
 | 7.6 | Encryption | enforced rejection, cited |
 | 7.10 | File trailer, catalog (Table 29), page tree (Tables 30–31), resources (Table 34) | validation pass |
