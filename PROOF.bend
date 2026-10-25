@@ -54,3 +54,15 @@ def Laws.val_one_page():
 
 def Laws.val_trailer_no_root():
   {==}
+
+def Laws.xs_lex_body():
+  {==}
+
+def Laws.xs_w_w142():
+  {==}
+
+def Laws.xs_decode_w1410():
+  {==}
+
+def Laws.xs_audit_exact():
+  {==}

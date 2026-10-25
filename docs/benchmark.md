@@ -207,3 +207,64 @@ Four golden §7.10 laws in `LAWS.bend` — `res_dict_root` (7.3.7 lookup),
 counts 1 page), `val_trailer_no_root` (Table 15, 7.5.5 citation) — 15
 laws total, each with a `{==}` proof in `PROOF.bend`, passing both
 `bend PROOF.bend` and `bend PROOF.bend --verdict`.
+
+## Week 5 — cross-reference streams (§7.5.8)
+
+The parse regime now stops on `startxref` and hands the token remnant to a
+new dispatch: keyword `xref` opens the classic table (7.5.4), keyword
+`startxref` opens the cross-reference-stream regime (7.5.8.1). The lexer
+contributes a body-skip state: after `stream` plus its end-of-line marker
+(7.3.8.1) the DFA consumes data opaquely until the `endstream` sequence,
+emitting a `TStreamBody` token — a mis-skipped byte is recovered inside the
+body scan, and `endstream` needs no interpreter stack.
+
+The stream regime is three passes over the parsed object table, each one
+self-recursive walker with a Nat fuel (64 * objects + 256):
+
+1. audit — every stream object's data is checked against its `Length`
+   entry: equal, or longer by at most two end-of-line bytes (7.3.8.2 and
+   its note; v0 counts the extras without verifying their shape). An
+   indirect `Length` stays unresolved in v0, so its check is skipped.
+2. find — exactly one stream object may carry `/Type /XRef` (Table 17);
+   zero streams reports 7.5.4, streams with a wrong Type report
+   Table 17/7.5.8.2, two or more XRef streams report the incremental
+   chain as unsupported v0 (Table 17 Prev, 7.5.6).
+3. decode — the dictionary entries collect in table order: `Filter`
+   present means the v0 limitation diagnostic (Table 5 Filter, 7.4);
+   `W` must be three non-negative integers with a non-zero second
+   element (Table 17, 7.5.8.3) capped at 4 bytes per field; `Size`
+   must be a direct non-negative integer (Table 17, 7.5.8.2); `Index`
+   defaults to `[0 Size]` and its pairs must be sorted ascending
+   without overlap. Rows are decoded big-endian per the `W` widths:
+   type 0 rows are free, type 1 rows carry an offset and generation,
+   type 2 rows report the compressed-entry v0 limit (7.5.7), any other
+   type references the null object and keeps its position as a free
+   placeholder (Table 18, 7.5.8.3). The stream dictionary doubles as
+   the trailer (7.5.8.1).
+
+## Results
+
+Classic fixtures unchanged: mini XOK 5 entries objs=4, full1 XOK 4/3,
+full2 XOK 5/4, ref1 XOK 2/1, xref1 XOK 2/1, tiny3 the same 7.5.4 error.
+New cross-reference-stream fixtures, all raw (unfiltered) with `W [1 4 2]`:
+full1x (Index [0 4] and X [0 5], explicit or defaulted) decode XOK with
+the same entry counts as their classic twins. One battery of negatives
+cites exactly one clause each: Filter (Table 5 Filter, 7.4), data longer
+than Length by more than two bytes (7.3.8.2), `W[1] = 0` (Table 17,
+7.5.8.3), unsorted overlapping subsections (Table 17, 7.5.8.2), a type-2
+row (7.5.7), two XRef streams (Table 17 Prev, 7.5.6).
+
+## Bend 2 mechanics that shaped the code
+
+The checker's definition order is bottom-up: no definition may reference
+a later one, so every wrapper (audit, xfind, xs_w, xs_ix, xr) is written
+after its recursion walker and the file's tail segments are ordered
+callee-first. Inline `match` on a computed value is illegal — every
+comparison result rides as a parameter into the next state (the
+`RXo`/`RXt` pattern). Match scrutinees must follow ascending binder
+order, so the row state carries the row-count field before the pair
+list. A binder used more than once is marked with `+` at its binding
+site, and match scrutinees that are re-read in an arm need the mark too.
+One affine subtlety worth recording: a def parameter consumed by two
+sibling arms must be marked at the definition site, while the same reuse
+across separate top-level arms stays plain.

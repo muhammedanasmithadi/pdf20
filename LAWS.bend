@@ -77,3 +77,22 @@ law val_one_page:
 # a trailer without Root cites Table 15/7.5.5
 law val_trailer_no_root:
   {R.validate(X.FullRes{Nil{}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 2, 0n, 1n}}, Nil{}}}, 0}) == R.VErr{"trailer missing Root (Table 15, 7.5.5)"} : R.ValRes}
+
+# Golden laws for the cross-reference stream milestone (7.5.8). X = xref.bend.
+
+# The lexer hands the parser a TStreamBody token carrying opaque stream data
+# (7.3.8.1); W [1 4 2] is the v0 acceptance case (Table 17, 7.5.8.3); one
+# type-1 row decodes to an in-use XE at the field-2 offset (Table 18);
+# the audit accepts data equal to Length (7.3.8.2).
+
+law xs_lex_body:
+  {Pdf.lex(Con{115, Con{116, Con{114, Con{101, Con{97, Con{109, Con{10, Con{0, Con{255, Con{101, Con{0, Con{110, Con{66, Con{10, Con{101, Con{110, Con{100, Con{115, Con{116, Con{114, Con{101, Con{97, Con{109, Con{10, Nil{}}}}}}}}}}}}}}}}}}}}}}}}}) == Pdf.Lexed{Con{Pdf.TWord{"stream"}, Con{Pdf.TStreamBody{SCon{Char.from_u32(0), SCon{Char.from_u32(255), SCon{Char.from_u32(101), SCon{Char.from_u32(0), SCon{Char.from_u32(110), SCon{Char.from_u32(66), SCon{Char.from_u32(10), SNil{}}}}}}}}}, Con{Pdf.TWord{"endstream"}, Nil{}}}}} : Pdf.Lex}
+
+law xs_w_w142:
+  {X.xs_w(P.OArr{Con{P.ONum{False{}, 1, 0n, 1n}, Con{P.ONum{False{}, 4, 0n, 1n}, Con{P.ONum{False{}, 2, 0n, 1n}, Nil{}}}}}) == X.WOK{1, 4, 2} : X.WRes}
+
+law xs_decode_w1410:
+  {X.xr(Con{0, Con{1, Nil{}}}, 0, 0, SCon{Char.from_u32(1), SCon{Char.from_u32(0), SCon{Char.from_u32(0), SCon{Char.from_u32(0), SCon{Char.from_u32(10), SCon{Char.from_u32(0), SCon{Char.from_u32(0), SNil{}}}}}}}}, 1n, 4n, 2n) == X.XROk{Con{X.XE{0, 0, True{}, 10}, Nil{}}} : X.XRRes}
+
+law xs_audit_exact:
+  {X.audit(Con{P.BO{4, 0, P.OStream{P.ODict{Con{P.PE{"Length", P.ONum{False{}, 3, 0n, 1n}}, Nil{}}}, SCon{Char.from_u32(49), SCon{Char.from_u32(50), SCon{Char.from_u32(51), SNil{}}}}}}, Nil{}}) == X.AudOk{} : X.AudRes}

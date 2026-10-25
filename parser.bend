@@ -29,6 +29,7 @@ type Obj is Data:
   OArr{els: List<&2, Obj>}
   ODict{els: List<&2, PEntry>}
   OInd{num: U32, gen: U32}
+  OStream{d: Obj, dat: String}
 
 # dictionary entry (7.3.7): key shall be a name; null-valued entries are
 # kept here and dropped by the validation pass.
@@ -57,6 +58,8 @@ type Fr is Data:
   FPost{num: Obj, gen: Obj, v: Obj}
   FArr{rev: List<&2, Obj>}
   FD{rev: List<&2, PEntry>, k: Maybe<&2, String>}
+  FStream{num: Obj, gen: Obj, d: Obj}
+  FStreamX{num: Obj, gen: Obj, d: Obj, dat: String}
   FBAD{why: String}
 
 # walker state
@@ -68,7 +71,7 @@ type PST is Data:
 # the next milestone's regime); PErr = nonconformity, why cites the clause.
 type PRes is Data:
   POks{objs: List<&2, BO>}
-  PCut{objs: List<&2, BO>}
+  PCut{objs: List<&2, BO>, kw: String}
   PErr{why: String}
 
 # ---- first aid: header numbers become U32. v0.1 deferral keeps the whole
@@ -92,6 +95,8 @@ def u32of(o: Obj) -> U32:
       0
     case OInd{num, gen}:
       num
+    case OStream{d, dat}:
+      0
 
 # ---- per-frame diagnostics: what the frame was still expecting
 
@@ -118,6 +123,10 @@ def pdeflt(f: Fr) -> String:
       pdefltfd(k)
     case FPost{x, y, z}:
       "endobj (or stream) expected after the value (7.3.10)"
+    case FStream{num, gen, d}:
+      "stream body expected (7.3.8.1)"
+    case FStreamX{num, gen, d, dat}:
+      "endstream expected after the stream body (7.3.8.1)"
     case FBAD{why}:
       why
 
@@ -151,7 +160,11 @@ def pdisp2(v: Obj, f: Fr, t: List<&2, Fr>) -> List<&2, Fr>:
     case FNum2{x, y}:
       Con{FBAD{"obj keyword expected after the header numbers (7.3.10)"}, t}
     case FPost{x, y, z}:
-      Con{FBAD{"endobj (or stream) expected after the value (7.3.10)"}, t}
+      Con{FBAD{"stream body expected (7.3.8.1)"}, t}
+    case FStream{num, gen, d}:
+      Con{FBAD{"stream body expected (7.3.8.1)"}, t}
+    case FStreamX{num, gen, d, dat}:
+      Con{FBAD{"endstream expected after the stream body (7.3.8.1)"}, t}
     case FBAD{why}:
       Con{FBAD{why}, t}
 
@@ -188,6 +201,10 @@ def pfrmsg(f: Fr) -> String:
       pfrmsfd(k)
     case FPost{x, y, z}:
       "endobj missing at end of file (7.3.10)"
+    case FStream{num, gen, d}:
+      "stream body missing at end of file (7.3.8.1)"
+    case FStreamX{num, gen, d, dat}:
+      "endstream missing at end of file (7.3.8.1)"
     case FBAD{why}:
       why
 
@@ -250,7 +267,11 @@ def pnum1(num: Obj, f: Fr, t: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, 
     case FD{els, k}:
       pnumfd(num, f, t, tt, acc)
     case FPost{x, y, z}:
-      PST{None{}, tt, Con{FBAD{"endobj (or stream) expected after the value (7.3.10)"}, t}, PNil{}, acc}
+      PST{None{}, tt, Con{FBAD{"stream body expected (7.3.8.1)"}, t}, PNil{}, acc}
+    case FStream{num, gen, d}:
+      PST{None{}, tt, Con{FBAD{"stream body expected (7.3.8.1)"}, t}, PNil{}, acc}
+    case FStreamX{num, gen, d, dat}:
+      PST{None{}, tt, Con{FBAD{"endstream expected after the stream body (7.3.8.1)"}, t}, PNil{}, acc}
     case FBAD{why}:
       PST{None{}, tt, Con{FBAD{why}, t}, PNil{}, acc}
 
@@ -438,6 +459,16 @@ def pdict(open: Bool, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: 
 
 def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstream: Bool, wendstream: Bool, wxref: Bool, wtrailer: Bool, wstartxref: Bool, wxreg: Bool, toks: List<&2, Lx.Tok>, pend: Pend, acc: List<&2, BO>) -> PST:
   match f:
+    case FStream{num, gen, d}:
+      # only the body event may follow `stream` (7.3.8.1); words are errors
+      PST{None{}, toks, Con{FBAD{"stream body expected (7.3.8.1)"}, t}, PNil{}, acc}
+    case FStreamX{num, gen, d, dat}:
+      match wendstream:
+        case True{}:
+          # body done: the stream value files, endobj closes the object
+          PST{None{}, toks, Con{FPost{num, gen, OStream{d, dat}}, t}, PNil{}, acc}
+        case False{}:
+          PST{None{}, toks, Con{FBAD{"endstream expected after the stream body (7.3.8.1)"}, t}, PNil{}, acc}
     case FNum2{x, y}:
       match wfval:
         case True{}:
@@ -453,9 +484,15 @@ def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstre
         case False{}:
           match wstream:
             case True{}:
-              # `stream` after the value: PCut uniformly — file this BO and
-              # stop; stream body stays opaque (7.3.8.1)
-              PST{Some{PCut{Con{BO{u32of(num), u32of(gen), v}, acc}}}, toks, t, PNil{}, Nil{}}
+              # `stream` after the value: the value is the stream dictionary;
+              # the body follows, endstream completes it (7.3.8.1)
+              PST{None{}, toks, Con{FStream{num, gen, v}, t}, PNil{}, acc}
+            case False{}:
+              match wendstream:
+                case True{}:
+                  PST{None{}, toks, Con{FBAD{"endstream keyword without an open stream (7.3.8.1)"}, t}, PNil{}, acc}
+                case False{}:
+                  PST{None{}, toks, Con{FBAD{"endobj (or stream) expected after the value (7.3.10)"}, t}, PNil{}, acc}
             case False{}:
               PST{None{}, toks, Con{FBAD{"endobj (or stream) expected after the value (7.3.10)"}, t}, PNil{}, acc}
     case FHead{x, y}:
@@ -473,18 +510,13 @@ def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstre
     case FArr{els}:
       PST{None{}, toks, pdisp(OName{w}, Con{f, t}), PNil{}, acc}
     case FStart{}:
-      match wstream:
+      match wxreg:
         case True{}:
-          # `stream` between objects: PCut — stream stays opaque (7.3.8.1)
-          PST{Some{PCut{List.reverse(&2, BO, acc)}}, toks, Con{f, t}, PNil{}, Nil{}}
+          # `xref`/`trailer`/`startxref` between objects: PCut — xref
+          # regime takes over, carrying the trigger keyword (7.5.8.1)
+          PST{Some{PCut{List.reverse(&2, BO, acc), w}}, toks, Con{f, t}, PNil{}, Nil{}}
         case False{}:
-          match wxreg:
-            case True{}:
-              # `xref`/`trailer`/`startxref` between objects: PCut — xref
-              # regime takes over (7.5 file structure)
-              PST{Some{PCut{List.reverse(&2, BO, acc)}}, toks, Con{f, t}, PNil{}, Nil{}}
-            case False{}:
-              PST{None{}, toks, Con{FBAD{"indirect object definition expected (7.3.10)"}, t}, PNil{}, acc}
+          PST{None{}, toks, Con{FBAD{"indirect object definition expected (7.3.10)"}, t}, PNil{}, acc}
     case FNum1{x}:
       PST{None{}, toks, Con{FBAD{"generation number expected (7.3.10)"}, t}, PNil{}, acc}
     case FBAD{why}:
@@ -546,6 +578,23 @@ def pword(+w: String, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: 
     case x:
       pword_r(String.eq(x, "obj"), String.eq(x, "R"), x, pend, stk, tt, acc)
 
+# ---- stream body arrival (7.3.8.1): the only frame that may accept a body
+# is FStream (pushed by the `stream` keyword); it becomes FStreamX. Any
+# other context diagnoses the stray body at the next event.
+
+def pstream_body(dat: String, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) -> PST:
+  match stk:
+    case Nil{}:
+      PST{None{}, tt, Con{FBAD{"stream body outside a stream object (7.3.8.1)"}, Nil{}}, PNil{}, acc}
+    case Con{f, t}:
+      match f:
+        case FStream{num, gen, d}:
+          PST{None{}, tt, Con{FStreamX{num, gen, d, dat}, t}, PNil{}, acc}
+        case FBAD{why}:
+          PST{None{}, tt, Con{f, t}, PNil{}, acc}
+        case x:
+          PST{None{}, tt, Con{FBAD{"stream body outside a stream object (7.3.8.1)"}, t}, PNil{}, acc}
+
 # ---- token-kind dispatch for one event (tk matched first)
 
 def pstep(tk: Lx.Tok, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) -> PST:
@@ -564,6 +613,8 @@ def pstep(tk: Lx.Tok, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: 
       pdict(open, pend, stk, tt, acc)
     case Lx.TWord{val}:
       pword(val, pend, stk, tt, acc)
+    case Lx.TStreamBody{dat}:
+      pstream_body(dat, stk, tt, acc)
 
 # ---- the self-recursive walker. fuel = 2*ntok + 8: every token consumed
 # at most twice (flush + re-feed); the last recursion is the EOF stop-check.
@@ -573,8 +624,8 @@ def peof_done(pe: PRes) -> PST:
   match pe:
     case POks{o}:
       PST{Some{POks{o}}, Nil{}, Nil{}, PNil{}, Nil{}}
-    case PCut{o}:
-      PST{Some{PCut{o}}, Nil{}, Nil{}, PNil{}, Nil{}}
+    case PCut{o, kw}:
+      PST{Some{PCut{o, kw}}, Nil{}, Nil{}, PNil{}, Nil{}}
     case PErr{why}:
       PST{Some{PErr{why}}, Nil{}, Nil{}, PNil{}, Nil{}}
 
@@ -650,6 +701,10 @@ def pval(fuel: Nat, pst: PST) -> PST:
                           pval(p, pword_r(String.eq(val, "obj"), String.eq(val, "R"), val, PN1{a}, stk, tt, acc))
                         case PN2{a, b}:
                           pval(p, pword_r(String.eq(val, "obj"), String.eq(val, "R"), val, PN2{a, b}, stk, tt, acc))
+                    case Lx.TStreamBody{+dat}:
+                      # a body never rides a pending number chain (it follows
+                      # `stream`, which flushes the chain); route on the stack
+                      pval(p, pstream_body(dat, stk, tt, acc))
 
 # nxt.stop is a field binder, matched in its own def (computed values can't
 # be scrutinized directly)
@@ -729,7 +784,7 @@ def pres_rpt(pr: PRes) -> String:
   match pr:
     case POks{o}:
       (("OK " ++ Nat.show(List.length(&2, BO, o))) ++ " objects")
-    case PCut{o}:
+    case PCut{o, kw}:
       (("CUT " ++ Nat.show(List.length(&2, BO, o))) ++ " objects")
     case PErr{why}:
       (("ERR " ++ why))

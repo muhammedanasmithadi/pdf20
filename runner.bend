@@ -45,7 +45,7 @@ def parse_rpt(rp: P.PRes & U32) -> String:
   match pr:
     case P.POks{o}:
       (("OK " ++ Nat.show(List.length(&2, P.BO, o))) ++ " objects " ++ U32.show(sz))
-    case P.PCut{o}:
+    case P.PCut{o, kw}:
       (("CUT " ++ Nat.show(List.length(&2, P.BO, o))) ++ " objects " ++ U32.show(sz))
     case P.PErr{why}:
       (("ERR " ++ why) ++ " " ++ U32.show(sz))

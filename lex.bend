@@ -19,6 +19,7 @@ type Tok is Data:
   TArg{open: Bool}
   TDict{open: Bool}
   TWord{val: String}
+  TStreamBody{dat: String}
 
 type Lex is Data:
   Lexed{toks: List<&2, Tok>}
@@ -45,6 +46,8 @@ type St is Data:
   StOct1{depth: U32, rev: String, ov: U32}
   StOct2{depth: U32, rev: String, ov: U32}
   StHex{pend: Maybe<&2, U32>, rev: String}
+  StWantEOL{}
+  StSkipBody{rev: String, depth: Nat}
   StErr{why: String}
 
 type Frame is Data:
@@ -227,13 +230,156 @@ def tnum(zdig: Bool, zdot: Bool, neg: Bool, whole: U32, phase: Bool, fnum: Nat, 
         case False{}:
           # token ends at a non-number byte: readd that byte at top
           Frame{Con{b, t}, StTop{}, Con{TNum{neg, whole, fnum, fden}, acc}}
+def tword_stream(zs: Bool, +fwd: String, b: U32, t: List<&2, U32>, acc: List<&2, Tok>) -> Frame:
+  match zs:
+    case True{}:
+      Frame{Con{b, t}, StWantEOL{}, Con{TWord{"stream"}, acc}}
+    case False{}:
+      Frame{Con{b, t}, StTop{}, Con{TWord{fwd}, acc}}
+
+# StWantEOL: the byte after `stream` shall be a LF, or CR+LF — never a
+# CARRIAGE RETURN alone (7.3.8.1)
+
+
+def tword_fwd(+fwd: String, b: U32, t: List<&2, U32>, acc: List<&2, Tok>) -> Frame:
+  tword_stream(String.eq(fwd, "stream"), fwd, b, t, acc)
+
+# only `stream` changes state: an end-of-line marker is next (7.3.8.1);
+# every other word emits normally
+
 
 def tword(zwordch: Bool, b: U32, t: List<&2, U32>, rev: String, acc: List<&2, Tok>) -> Frame:
   match zwordch:
     case True{}:
       Frame{t, StWord{SCon{Char.from_u32(b), rev}}, acc}
     case False{}:
-      Frame{Con{b, t}, StTop{}, Con{TWord{String.reverse(rev)}, acc}}
+      # word end: reverse once, then route the whole word (7.3.8.1)
+      tword_fwd(String.reverse(rev), b, t, acc)
+
+# the completed word is a param, so the stream check can ride beside it
+
+
+
+
+def tws_crl(z10: Bool, t2: List<&2, U32>, acc: List<&2, Tok>) -> Frame:
+  match z10:
+    case True{}:
+      Frame{t2, StSkipBody{SNil{}, 0n}, acc}
+    case False{}:
+      Frame{t2, StErr{"carriage return alone after stream keyword (7.3.8.1)"}, acc}
+
+# drop the first n characters of a string (reversed accumulator)
+
+
+
+def tws_cr(t: List<&2, U32>, acc: List<&2, Tok>) -> Frame:
+  match t:
+    case Nil{}:
+      Frame{t, StErr{"carriage return alone after stream keyword (7.3.8.1)"}, acc}
+    case Con{b2, t2}:
+      tws_crl(U32.is_eq(b2, 10), t2, acc)
+
+
+
+def tws(z10: Bool, z13: Bool, b: U32, t: List<&2, U32>, acc: List<&2, Tok>) -> Frame:
+  match z10:
+    case True{}:
+      Frame{t, StSkipBody{SNil{}, 0n}, acc}
+    case False{}:
+      match z13:
+        case True{}:
+          tws_cr(t, acc)
+        case False{}:
+          Frame{t, StErr{"no end-of-line marker after stream keyword (7.3.8.1)"}, acc}
+
+# after a raw CR, the LF is required; anything else is CR alone,
+# which 7.3.8.1 explicitly forbids
+
+
+
+def sdrop(n: Nat, +s: String) -> String:
+  match n:
+    case 0n:
+      s
+    case 1n+p:
+      match s:
+        case SNil{}:
+          SNil{}
+        case SCon{h, tl}:
+          sdrop(p, tl)
+
+# ---- StSkipBody: consume stream data opaquely until the endstream
+# sequence (end-of-line after stream already consumed per 7.3.8.1).
+# depth = how many bytes of the matched prefix are seen (0..8); a
+# mismatch re-seeds at depth 1 when the byte is 'e' (101), else 0.
+# The matched bytes accumulate into rev and are trimmed at completion.
+
+
+
+# completion: body first, then endstream, both prepended in that order
+
+def tsb_done(+dat: String, t: List<&2, U32>, acc: List<&2, Tok>) -> Frame:
+  # nest BODY below endstream so the emission order is body then keyword
+  Frame{t, StTop{}, Con{TWord{"endstream"}, Con{TStreamBody{dat}, acc}}}
+
+def tsb_end(zc: Bool, zez: Bool, b: U32, t: List<&2, U32>, rev: String, acc: List<&2, Tok>) -> Frame:
+  match zc:
+    case True{}:
+      tsb_done(String.reverse(sdrop(8n, rev)), t, acc)
+    case False{}:
+      match zez:
+        case True{}:
+          Frame{t, StSkipBody{SCon{Char.from_u32(b), rev}, 1n}, acc}
+        case False{}:
+          Frame{t, StSkipBody{SCon{Char.from_u32(b), rev}, 0n}, acc}
+
+# completion: body first, then endstream, both prepended in that order
+
+
+
+def tsb_go(zc: Bool, zez: Bool, dnext: Nat, b: U32, t: List<&2, U32>, rev: String, acc: List<&2, Tok>) -> Frame:
+  match zc:
+    case True{}:
+      Frame{t, StSkipBody{SCon{Char.from_u32(b), rev}, dnext}, acc}
+    case False{}:
+      match zez:
+        case True{}:
+          Frame{t, StSkipBody{SCon{Char.from_u32(b), rev}, 1n}, acc}
+        case False{}:
+          Frame{t, StSkipBody{SCon{Char.from_u32(b), rev}, 0n}, acc}
+
+# at depth 8 a match completes: the 8 accumulated match chars leave rev,
+# the body token is emitted with the endstream word after it, and the
+# walk resumes at top level on the bytes past the match
+
+
+
+def tsb(depth: Nat, +b: U32, t: List<&2, U32>, +rev: String, acc: List<&2, Tok>) -> Frame:
+  match depth:
+    case 0n:
+      tsb_go(U32.is_eq(b, 101), U32.is_eq(b, 101), 1n, b, t, rev, acc)
+    case 1n:
+      tsb_go(U32.is_eq(b, 110), U32.is_eq(b, 101), 2n, b, t, rev, acc)
+    case 2n:
+      tsb_go(U32.is_eq(b, 100), U32.is_eq(b, 101), 3n, b, t, rev, acc)
+    case 3n:
+      tsb_go(U32.is_eq(b, 115), U32.is_eq(b, 101), 4n, b, t, rev, acc)
+    case 4n:
+      tsb_go(U32.is_eq(b, 116), U32.is_eq(b, 101), 5n, b, t, rev, acc)
+    case 5n:
+      tsb_go(U32.is_eq(b, 114), U32.is_eq(b, 101), 6n, b, t, rev, acc)
+    case 6n:
+      tsb_go(U32.is_eq(b, 101), U32.is_eq(b, 101), 7n, b, t, rev, acc)
+    case 7n:
+      tsb_go(U32.is_eq(b, 97), U32.is_eq(b, 101), 8n, b, t, rev, acc)
+    case 8n:
+      tsb_end(U32.is_eq(b, 109), U32.is_eq(b, 101), b, t, rev, acc)
+    case 1n+p:
+      # depth never exceeds 8 (completion resets to StTop); keep the
+      # match exhaustive with a safe no-op
+      Frame{t, StSkipBody{SCon{Char.from_u32(b), rev}, 0n}, acc}
+
+
 
 def tname(zwordch: Bool, z35: Bool, b: U32, t: List<&2, U32>, rev: String, acc: List<&2, Tok>) -> Frame:
   match zwordch:
@@ -429,6 +575,10 @@ def eofout(st: St, acc: List<&2, Tok>) -> Lex:
       LexErr{"unterminated string"}
     case StHex{pend, rev}:
       LexErr{"unterminated hex string"}
+    case StWantEOL{}:
+      LexErr{"no end-of-line marker after stream keyword (7.3.8.1)"}
+    case StSkipBody{rev, depth}:
+      LexErr{"stream body not terminated by endstream (7.3.8.1)"}
     case StErr{why}:
       LexErr{why}
 
@@ -483,6 +633,10 @@ def toks(fuel: Nat, r: Frame) -> Lex:
                   toks(p, toct2(is_octd(b), b, t, depth, rev, ov, acc))
                 case StHex{pend, rev}:
                   toks(p, thex(is_hd(b), U32.is_eq(b, 62), is_ws(b), b, t, pend, rev, acc))
+                case StWantEOL{}:
+                  toks(p, tws(U32.is_eq(b, 10), U32.is_eq(b, 13), b, t, acc))
+                case StSkipBody{rev, depth}:
+                  toks(p, tsb(depth, b, t, rev, acc))
                 case StErr{why}:
                   LexErr{why}
 
