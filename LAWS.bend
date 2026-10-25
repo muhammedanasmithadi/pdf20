@@ -10,6 +10,8 @@
 import Base
 import ./lex.bend as Pdf
 import ./parser.bend as P
+import ./xref.bend as X
+import ./resolve.bend as R
 
 # Offset arithmetic in clause 7.5 runs on natural numbers (xref positions,
 # lengths, gaps). `x + 0 == x` is the first lemma every offset-normalization
@@ -56,3 +58,22 @@ law par_num_obj:
 
 law par_ref_err:
   {P.pfile(Con{53, Con{32, Con{111, Con{98, Con{106, Nil{}}}}}}) == P.PErr{"generation number expected (7.3.10)"} : P.PRes}
+
+# Golden laws for resolution and validation (7.10, Tables 15/29/30).
+# R = resolve.bend: dict_get (7.3.7), resolve_obj (7.3.10), validate.
+
+# /Root lookup in a trailer with /Size and /Root present
+law res_dict_root:
+  {R.dict_get("Root", P.ODict{Con{P.PE{"Size", P.ONum{False{}, 4, 0n, 1n}}, Con{P.PE{"Root", P.OInd{1, 0}}, Nil{}}}}) == R.Res{P.OInd{1, 0}} : R.Resolved}
+
+# resolution of a reference with no defining object cites 7.3.10
+law res_obj_miss:
+  {R.resolve_obj(Con{P.BO{1, 0, P.ONil{}}, Nil{}}, 9, 0, R.U32_eq(1, 9), False{}, P.ONil{}) == R.RErr{"object 9 0 R not found (7.3.10)"} : R.Resolved}
+
+# one-level tree: /Catalog -> /Pages(Kids [3 0 R]) -> /Page counts 1
+law val_one_page:
+  {R.validate(X.FullRes{Con{P.BO{1, 0, P.ODict{Con{P.PE{"Type", P.OName{"Catalog"}}, Con{P.PE{"Pages", P.OInd{2, 0}}, Nil{}}}}}, Con{P.BO{2, 0, P.ODict{Con{P.PE{"Type", P.OName{"Pages"}}, Con{P.PE{"Kids", P.OArr{Con{P.OInd{3, 0}, Nil{}}}}, Con{P.PE{"Count", P.ONum{False{}, 1, 0n, 1n}}, Nil{}}}}}}, Con{P.BO{3, 0, P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Nil{}}}}, Nil{}}}}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 4, 0n, 1n}}, Con{P.PE{"Root", P.OInd{1, 0}}, Nil{}}}}, 0}) == R.VOk{1} : R.ValRes}
+
+# a trailer without Root cites Table 15/7.5.5
+law val_trailer_no_root:
+  {R.validate(X.FullRes{Nil{}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 2, 0n, 1n}}, Nil{}}}, 0}) == R.VErr{"trailer missing Root (Table 15, 7.5.5)"} : R.ValRes}

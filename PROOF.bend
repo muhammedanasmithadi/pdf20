@@ -42,3 +42,15 @@ def Laws.par_num_obj():
 
 def Laws.par_ref_err():
   {==}
+
+def Laws.res_dict_root():
+  {==}
+
+def Laws.res_obj_miss():
+  {==}
+
+def Laws.val_one_page():
+  {==}
+
+def Laws.val_trailer_no_root():
+  {==}

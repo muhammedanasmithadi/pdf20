@@ -152,3 +152,58 @@ later resolution. All rejections cite ISO 32000-2:2020 clause 7.5.4.
 Nine golden parser laws plus xref laws in `LAWS.bend`, each with a `{==}`
 proof in `PROOF.bend`, passing both `bend PROOF.bend` and
 `bend PROOF.bend --verdict`.
+
+# Validation milestone — week 4 benchmark
+
+Date: 2026-10-25. Toolchain: Bend 2.0.39, single-core. Two additions
+land together: real trailer-dictionary parsing (§7.5.4) in `xref.bend`
+and the §7.10 validator (`resolve.bend`) on top of it.
+
+## Method
+
+`resolve.bend` reads argv[1] and runs the whole clause-7 chain: lex
+(§7.2/7.3), parse (§7.5), xref + trailer (§7.5.4), then validates the
+trailer and the document page tree (§7.10, Tables 15/29/30), reporting
+`VALID <n> pages` or `INVALID <cited clause>`. Golden fixtures replace a
+corpus sweep here: the §7.10 chain only engages on files whose classic
+xref precedes any stream, and streams stay opaque in v0, so few corpus
+files reach validation. Fixture verdicts:
+
+| Fixture | Bytes | Verdict |
+|---|---|---|
+| full1.pdf — catalog → /Pages → 1 kid | 291 | VALID 1 pages |
+| full2.pdf — catalog → /Pages → 2 kids | 350 | VALID 2 pages |
+| ref1.pdf — trailer /Root points to a missing object | 160 | INVALID object 2 0 R not found (7.3.10) |
+| xref1.pdf — catalog without /Pages | 147 | INVALID catalog missing Pages (Table 29, 7.7.2) |
+| mini.pdf — malformed xref subsection header | 403 | INVALID xref subsection start malformed (7.5.4) |
+| tiny3.pdf — 18-byte header stub | 18 | INVALID no xref section found (7.5.4) |
+
+Zero crashes across the fixtures and the earlier corpus sweeps;
+`bend runner.bend` stays clean (`40 lines: OK … | CUT … | XOK …`).
+
+## Design (§7.5.4 trailer + §7.10 validation)
+
+The trailer dictionary is parsed by re-entering the existing object
+regime: the token remnant past `trailer` is cut at `startxref` and fed to
+`P.pval` seeded with a synthetic `0 0 obj` head frame plus a synthetic
+`endobj` token, so the dict closes through the normal value path and no
+new parser code is written. The validator is one fuel-driven state
+machine (`trav`, 25 frame variants): the scrutinee field rides first in
+each state, computed lookups (`dict_get`, `resolve_obj`, `String.eq`)
+ride into the next state, and fuel is `32 * len(objs) + 24`. The walk
+checks trailer Size (Table 15), resolve Root (7.3.10), catalog Type
+(Table 29), Pages ref and page-tree root Type/Kids (Table 30), then
+counts `/Page` kids. Every rejection cites its clause and table.
+
+One mechanism discovery shaped the golden laws: the lexer treats `/` as
+the name-start marker and stores names without it (§7.3.5), so parser
+keys are `Size`, not `/Size` — dictionary lookups in the validator and
+the laws both match bare text.
+
+## Laws proved
+
+Four golden §7.10 laws in `LAWS.bend` — `res_dict_root` (7.3.7 lookup),
+`res_obj_miss` (7.3.10 citation), `val_one_page` (full Table 29/30 walk
+counts 1 page), `val_trailer_no_root` (Table 15, 7.5.5 citation) — 15
+laws total, each with a `{==}` proof in `PROOF.bend`, passing both
+`bend PROOF.bend` and `bend PROOF.bend --verdict`.
