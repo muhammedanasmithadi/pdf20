@@ -468,5 +468,22 @@ converted from the error-free `XEList` wrapper to the error-carrying
 `XEntryRes` (`XEOk`/`XEErr`) so real offsets/generations propagate as
 diagnostics instead of being silently truncated.
 
-49 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
+52 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
 runner battery (27 fixtures) zero regressions; validator outcomes unchanged.
+
+
+## Encryption (7.6)
+
+Date: 2026-10-26. Per ISO 7.6.2, "the absence of this entry from the trailer dictionary means that a PDF processor shall consider the document to be not encrypted." Conversely, an /Encrypt entry in the trailer means the document is encrypted. v0 does not implement decryption, so encrypted documents are rejected with "document is encrypted (7.6); encryption not supported in v0".
+
+Two golden laws cover encryption detection: `dict_get_encrypt_found` (Encrypt entry present in trailer) and `dict_get_encrypt_missing` (Encrypt entry absent). The `val_encrypt_rejected` law proves end-to-end rejection via `R.validate`.
+
+## Indirect objects (7.3.10)
+
+Date: 2026-10-26. Per ISO 7.3.9, "an indirect object reference to a nonexistent object shall be treated the same as a null object." Previously, `resolve_obj` returned an error for missing objects; it now returns `Res{ONil{}}`, so a dangling reference propagates as null and the entry is treated as omitted. This changes the diagnostic for dangling references in required-key positions:
+
+- ref1 (`/Pages 2 0 R` where object 2 doesn't exist): now "catalog missing Pages (Table 29, 7.7.2)" instead of "object 2 0 R not found (7.3.10)"
+
+The downstream consumers (`VPnO` for page tree root, `VKrO` for page tree kids) each carry explicit `ONil` arms with the missing-key diagnostic.
+
+Two golden laws cover resolution: `res_obj_found` (existing object resolves to its value) and `res_obj_miss` (missing object resolves to `ONil`, i.e. null).

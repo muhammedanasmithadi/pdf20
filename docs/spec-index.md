@@ -22,7 +22,7 @@ Errata page last updated 2026-03.
 | 7.5.8 | Cross-reference streams (Tables 17–18) | raw unfiltered decode: W/Size/Index checks, big-endian rows, dict doubles as trailer; Filter/multi-XRef diagnostics; type-2 rows resolve into object streams (7.5.7)
 | 7.5.7 | Object streams (Table 16) | Table 16 dict walk (Type ObjStm, N and First direct non-negative; Filter rejected in v0); pair-header scan inside the First budget with pair offsets relative to the raw stream data (Table 16, 7.5.7); increasing-order check; per-object slicing by take/sdrop and stored-value parse (+endobj, NOTE 7); stored stream objects and bare references rejected (7.5.7); memo table so type-2 rows index decoded streams (Table 18, 7.5.8.3)
 | 7.5 | File structure: header, indirect objects, xref tables (Table 15 trailer, Table 17–18 xref streams, Table 19 hybrid reference), object streams, incremental updates | resolver + merge |
-| 7.6 | Encryption | enforced rejection, cited |
+| 7.6 | Encryption — Encrypt entry in trailer (Table 15); v0 rejects encrypted documents | validate rejects /Encrypt entry: "document is encrypted (7.6); encryption not supported in v0" |
 | 7.10 | File trailer, catalog (Table 29), page tree (Tables 30–31), resources (Table 34) | validation pass |
 | F (Annex) | Linearized PDF (Table F.1) | read first-page chain, v1 |
 

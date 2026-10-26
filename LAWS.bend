@@ -82,6 +82,20 @@ law val_one_page:
 law val_trailer_no_root:
   {R.validate(X.FullRes{Nil{}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 2, 0n, 1n}}, Nil{}}}, 0}) == R.VErr{"trailer missing Root (Table 15, 7.5.5)"} : R.ValRes}
 
+# Golden laws for encryption (7.6). X = resolve.bend, Pdf = lex.bend.
+
+# dict_get finds an Encrypt entry present in the trailer (7.3.7)
+law dict_get_encrypt_found:
+  {R.dict_get("Encrypt", P.ODict{Con{P.PE{"Encrypt", P.OInd{4, 0}}, Nil{}}}) == R.Res{P.OInd{4, 0}} : R.Resolved}
+
+# dict_get misses an absent Encrypt key (7.3.7)
+law dict_get_encrypt_missing:
+  {R.dict_get("Encrypt", P.ODict{Con{P.PE{"Size", P.ONum{False{}, 2, 0n, 1n}}, Nil{}}}) == R.RErr{"key not found in dictionary (7.3.7)"} : R.Resolved}
+
+# a trailer with an Encrypt entry is rejected (7.6: v0 does not implement decryption)
+law val_encrypt_rejected:
+  {R.validate(X.FullRes{Nil{}, Nil{}, P.ODict{Con{P.PE{"Encrypt", P.OInd{4, 0}}, Nil{}}}, 0}) == R.VErr{"document is encrypted (7.6); encryption not supported in v0"} : R.ValRes}
+
 # Golden laws for the cross-reference stream milestone (7.5.8). X = xref.bend.
 
 # The lexer hands the parser a TStreamBody token carrying opaque stream data

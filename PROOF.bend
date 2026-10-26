@@ -58,6 +58,15 @@ def Laws.val_one_page():
 def Laws.val_trailer_no_root():
   {==}
 
+def Laws.dict_get_encrypt_found():
+  {==}
+
+def Laws.dict_get_encrypt_missing():
+  {==}
+
+def Laws.val_encrypt_rejected():
+  {==}
+
 def Laws.xs_lex_body():
   {==}
 

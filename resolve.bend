@@ -28,6 +28,7 @@ type ValRes is Data:
 
 type VST is Data:
   VSz{sg: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
+  VSzEnc{enc: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
   VSzO{sz: P.Obj, tels: List<&2, P.PEntry>, objs: List<&2, P.BO>}
   VRt{rg: Resolved, objs: List<&2, P.BO>}
   VRtO{rt: P.Obj, objs: List<&2, P.BO>}
@@ -161,6 +162,14 @@ def trav(fuel: Nat, st: VST) -> ValRes:
               VErr{"trailer missing Size (Table 15, 7.5.5)"}
             case x:
               VErr{"trailer Size not a number (Table 15, 7.3.9)"}
+
+        # -- encryption check (7.6.2): Encrypt present → reject
+        case VSzEnc{enc, objs, +tels}:
+          match enc:
+            case Res{_}:
+              VErr{"document is encrypted (7.6); encryption not supported in v0"}
+            case RErr{_}:
+              trav(p, VSz{dict_get("Size", P.ODict{tels}), objs, tels})
 
         # -- trailer Root (Table 15): resolve the reference
         case VRt{rg, objs}:
@@ -361,11 +370,21 @@ def validate(fr: X.FullRes) -> ValRes:
     case X.FullRes{+objs, xref, trailer, startxref}:
       match trailer:
         case P.ODict{+tels}:
-          trav(Nat.add(Nat.mul(llen(objs), 32n), 24n), VSz{dict_get("Size", P.ODict{tels}), objs, tels})
+          # encryption check first (7.6.2): Encrypt present → reject
+          trav(Nat.add(Nat.mul(llen(objs), 32n), 24n), VSzEnc{dict_get("Encrypt", P.ODict{tels}), objs, tels})
         case x:
           VErr{"trailer not a dictionary (7.3.7, Table 15)"}
     case X.FullErr{why}:
       VErr{why}
+
+# ---- check_encrypt: Encrypt present → reject (7.6)
+# Matches the dict_get result as a parameter (Bend requires this pattern).
+def check_encrypt(enc: Resolved, p: Nat, tels: List<&2, P.PEntry>, objs: List<&2, P.BO>) -> ValRes:
+  match enc:
+    case Res{_}:
+      VErr{"document is encrypted (7.6); encryption not supported in v0"}
+    case RErr{_}:
+      trav(p, VRt{dict_get("Root", P.ODict{tels}), objs})
 
 # ---- report + entry
 
