@@ -173,7 +173,7 @@ files reach validation. Fixture verdicts:
 |---|---|---|
 | full1.pdf — catalog → /Pages → 1 kid | 291 | VALID 1 pages |
 | full2.pdf — catalog → /Pages → 2 kids | 350 | VALID 2 pages |
-| ref1.pdf — trailer /Root points to a missing object | 160 | INVALID object 2 0 R not found (7.3.10) |
+| ref1.pdf — trailer /Root points to a missing object | 160 | INVALID catalog missing Pages (Table 29, 7.7.2) |
 | xref1.pdf — catalog without /Pages | 147 | INVALID catalog missing Pages (Table 29, 7.7.2) |
 | mini.pdf — malformed xref subsection header | 403 | INVALID xref subsection start malformed (7.5.4) |
 | tiny3.pdf — 18-byte header stub | 18 | INVALID no xref section found (7.5.4) |
@@ -468,5 +468,5 @@ converted from the error-free `XEList` wrapper to the error-carrying
 `XEntryRes` (`XEOk`/`XEErr`) so real offsets/generations propagate as
 diagnostics instead of being silently truncated.
 
-43 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
+49 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
 runner battery (27 fixtures) zero regressions; validator outcomes unchanged.

@@ -101,9 +101,11 @@ def resolve_obj(rest: List<&2, P.BO>, +snum: U32, +sgen: U32, eq_num: Bool, eq_g
             case True{}:
               Res{cur_o}
             case False{}:
-              RErr{"object " ++ U32.show(snum) ++ " " ++ U32.show(sgen) ++ " R not found (7.3.10)"}
+              # a reference to a nonexistent object is treated as null (7.3.9)
+              Res{P.ONil{}}
         case False{}:
-          RErr{"object " ++ U32.show(snum) ++ " " ++ U32.show(sgen) ++ " R not found (7.3.10)"}
+          # a reference to a nonexistent object is treated as null (7.3.9)
+          Res{P.ONil{}}
     case Con{P.BO{num, gen, o}, rest2}:
       match eq_num:
         case True{}:
@@ -245,6 +247,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
 
         case VPnO{nd, objs}:
           match nd:
+            case P.ONil{}:
+              # a null-valued page tree root is the omitted entry (7.3.9)
+              VErr{"catalog missing Pages (Table 29, 7.7.2)"}
             case P.ODict{+els}:
               trav(p, VNV{dict_get("Type", P.ODict{els}), els, objs})
             case x:
@@ -313,6 +318,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
 
         case VKrO{ob, rk, cnt, objs}:
           match ob:
+            case P.ONil{}:
+              # a null-valued page tree kid is the omitted entry (7.3.9)
+              VErr{"page tree kid missing (Table 30, 7.7.3)"}
             case P.ODict{els}:
               trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
             case x:

@@ -49,6 +49,9 @@ def Laws.res_dict_root():
 def Laws.res_obj_miss():
   {==}
 
+def Laws.res_obj_found():
+  {==}
+
 def Laws.val_one_page():
   {==}
 

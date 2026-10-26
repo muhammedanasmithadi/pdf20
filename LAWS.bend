@@ -66,9 +66,13 @@ law par_ref_err:
 law res_dict_root:
   {R.dict_get("Root", P.ODict{Con{P.PE{"Size", P.ONum{False{}, 4, 0n, 1n}}, Con{P.PE{"Root", P.OInd{1, 0}}, Nil{}}}}) == R.Res{P.OInd{1, 0}} : R.Resolved}
 
-# resolution of a reference with no defining object cites 7.3.10
+# resolution of a reference with no defining object: treated as null (7.3.9)
 law res_obj_miss:
-  {R.resolve_obj(Con{P.BO{1, 0, P.ONil{}}, Nil{}}, 9, 0, R.U32_eq(1, 9), False{}, P.ONil{}) == R.RErr{"object 9 0 R not found (7.3.10)"} : R.Resolved}
+  {R.resolve_obj(Con{P.BO{1, 0, P.ONil{}}, Nil{}}, 9, 0, R.U32_eq(1, 9), False{}, P.ONil{}) == R.Res{P.ONil{}} : R.Resolved}
+
+# a reference to an existing object resolves to that object
+law res_obj_found:
+  {R.resolve_obj(Con{P.BO{1, 0, P.OName{"/Root"}}, Nil{}}, 1, 0, False{}, False{}, P.ONil{}) == R.Res{P.OName{"/Root"}} : R.Resolved}
 
 # one-level tree: /Catalog -> /Pages(Kids [3 0 R]) -> /Page counts 1
 law val_one_page:
