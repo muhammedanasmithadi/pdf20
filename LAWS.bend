@@ -158,3 +158,38 @@ law null_stored:
 # omitted entry (7.3.9, Table 15): the walker diagnoses the missing key
 law null_trailer_missing:
   {R.trav(4n, R.VSzO{P.ONil{}, Nil{}, Nil{}}) == R.VErr{"trailer missing Size (Table 15, 7.5.5)"} : R.ValRes}
+
+# Golden laws for numeric values (7.3.3). Integers: one or more decimal digits
+# optionally preceded by a sign. Reals: digits with optional sign and a leading,
+# trailing, or embedded PERIOD (2Eh). fnum==0n denotes an integer (no fraction
+# digits); fnum>0n denotes a real (fnum/fden). A real shall not appear where an
+# integer is expected (7.3.3). Byte lists are raw UTF-8/ASCII codes.
+
+law lex_int_neg:
+  {Pdf.lex(Con{45, Con{57, Con{56, Nil{}}}}) == Pdf.Lexed{Con{Pdf.TNum{True{}, 98, 0n, 1n}, Nil{}}} : Pdf.Lex}
+
+law lex_int_pos:
+  {Pdf.lex(Con{43, Con{49, Con{55, Nil{}}}}) == Pdf.Lexed{Con{Pdf.TNum{False{}, 17, 0n, 1n}, Nil{}}} : Pdf.Lex}
+
+law lex_real_embed:
+  {Pdf.lex(Con{51, Con{52, Con{46, Con{53, Nil{}}}}}) == Pdf.Lexed{Con{Pdf.TNum{False{}, 34, 5n, 10n}, Nil{}}} : Pdf.Lex}
+
+law lex_real_neg:
+  {Pdf.lex(Con{45, Con{51, Con{46, Con{54, Con{50, Nil{}}}}}}) == Pdf.Lexed{Con{Pdf.TNum{True{}, 3, 62n, 100n}, Nil{}}} : Pdf.Lex}
+
+law lex_real_lead_dot:
+  {Pdf.lex(Con{45, Con{46, Con{48, Con{48, Con{50, Nil{}}}}}}) == Pdf.Lexed{Con{Pdf.TNum{True{}, 0, 2n, 1000n}, Nil{}}} : Pdf.Lex}
+
+law lex_real_trail_dot:
+  {Pdf.lex(Con{52, Con{46, Nil{}}}) == Pdf.Lexed{Con{Pdf.TNum{False{}, 4, 0n, 1n}, Nil{}}} : Pdf.Lex}
+
+# a real-valued /Size is not an integer (7.3.3): the walker rejects it
+law size_real_rejected:
+  {R.trav(4n, R.VSzO{P.ONum{False{}, 5, 5n, 10n}, Nil{}, Nil{}}) == R.VErr{"trailer Size shall be an integer (7.3.3)"} : R.ValRes}
+
+# the offset after the startxref keyword shall be an integer (7.5.4, 7.3.3)
+law xref_offset_int:
+  {X.xref_offset_at(Nil{}, Pdf.TNum{False{}, 5, 0n, 1n}) == X.XOK{Nil{}, P.ONil{}, 5} : X.XRes}
+
+law xref_offset_real:
+  {X.xref_offset_at(Nil{}, Pdf.TNum{False{}, 5, 5n, 10n}) == X.XErr{"startxref offset shall be an integer (7.5.4, 7.3.3)"} : X.XRes}

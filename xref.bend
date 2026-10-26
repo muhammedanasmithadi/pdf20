@@ -125,7 +125,11 @@ def xref_entries(remaining: Nat, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> X
 def xref_offset_at(entries: List<&2, XE>, head: Lx.Tok) -> XRes:
   match head:
     case Lx.TNum{neg, whole, fnum, fden}:
-      XOK{entries, P.ONil{}, whole}
+      match fnum:
+        case 0n:
+          XOK{entries, P.ONil{}, whole}
+        case 1n+p:
+          XErr{"startxref offset shall be an integer (7.5.4, 7.3.3)"}
     case x:
       XErr{"startxref offset malformed (7.5.4)"}
 
@@ -176,17 +180,25 @@ def xref_parse(toks: List<&2, Lx.Tok>) -> XRes:
     case Con{tk, tt}:
       match tk:
         case Lx.TNum{neg, whole, fnum, fden}:
-          # whole is start; expect count TNum
-          match tt:
-            case Nil{}:
-              XErr{"unexpected end of tokens in xref subsection header (7.5.4)"}
-            case Con{tk2, tt2}:
-              match tk2:
-                case Lx.TNum{neg, whole, fnum, fden}:
-                  # whole is count; parse entries
-                  xref_parse_entries_done(xref_entries(U32.to_nat(whole), tt2, Nil{}))
-                case x:
-                  XErr{"xref subsection count malformed (7.5.4)"}
+          match fnum:
+            case 0n:
+              # whole is start; expect count TNum
+              match tt:
+                case Nil{}:
+                  XErr{"unexpected end of tokens in xref subsection header (7.5.4)"}
+                case Con{tk2, tt2}:
+                  match tk2:
+                    case Lx.TNum{neg, whole, fnum, fden}:
+                      match fnum:
+                        case 0n:
+                          # whole is count; parse entries
+                          xref_parse_entries_done(xref_entries(U32.to_nat(whole), tt2, Nil{}))
+                        case 1n+p:
+                          XErr{"xref subsection count shall be an integer (7.5.4, 7.3.3)"}
+                    case x:
+                      XErr{"xref subsection count malformed (7.5.4)"}
+            case 1n+p:
+              XErr{"xref subsection start shall be an integer (7.5.4, 7.3.3)"}
         case x:
           XErr{"xref subsection start malformed (7.5.4)"}
 

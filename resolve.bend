@@ -147,7 +147,13 @@ def trav(fuel: Nat, st: VST) -> ValRes:
         case VSzO{sz, tels, objs}:
           match sz:
             case P.ONum{neg, whole, fnum, fden}:
-              trav(p, VRt{dict_get("Root", P.ODict{tels}), objs})
+              match fnum:
+                case 0n:
+                  # an integer-valued Size (7.3.3: a real shall not appear
+                  # where an integer is expected)
+                  trav(p, VRt{dict_get("Root", P.ODict{tels}), objs})
+                case 1n+p:
+                  VErr{"trailer Size shall be an integer (7.3.3)"}
             case P.ONil{}:
               # a null-valued entry is the omitted entry (7.3.9)
               VErr{"trailer missing Size (Table 15, 7.5.5)"}

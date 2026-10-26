@@ -437,3 +437,31 @@ parse into OBool through the seeded stored-value parser), `bool_case`
 `null_trailer_missing` (the null-valued entry answers as the omitted
 entry, Table 15). 27 laws total, both `bend PROOF.bend` and
 `bend PROOF.bend --verdict` green.
+
+## Numeric objects (7.3.3)
+
+Date: 2026-10-26. Numbers parse as `ONum{neg, whole, fnum, fden}` where
+`fnum==0n` denotes an integer and `fnum>0n` a real (fnum/fden). The lexer
+accepts integers with an optional sign and reals with an optional sign and
+a leading, trailing, or embedded PERIOD (2Eh), e.g. `-98`, `+17`, `34.5`,
+`-3.62`, `-.002`, `4.` — six golden lexer laws pin the exact token shape
+(`lex_int_neg`, `lex_int_pos`, `lex_real_embed`, `lex_real_neg`,
+`lex_real_lead_dot`, `lex_real_trail_dot`).
+
+ISO 7.3.3: "a real number shall not be present where an integer is
+expected." Three integer-expected positions that silently dropped the
+fraction now reject reals with clause-cited diagnostics:
+
+- trailer `/Size` → "trailer Size shall be an integer (7.3.3)"
+  (law `size_real_rejected`, proven via `R.trav` on `VSzO`)
+- the offset after `startxref` → "startxref offset shall be an integer
+  (7.5.4, 7.3.3)" (laws `xref_offset_int`, `xref_offset_real`)
+- the xref subsection `start` and `count` → "xref subsection start/count
+  shall be an integer (7.5.4, 7.3.3)"
+
+The xref-stream path already enforced this (`xs_sz_int` / W-array check
+`fnum==0n`, Table 17, 7.5.8.3); xref-table entry offsets/generations remain
+a known gap (they flow through `XEList`, which carries no error variant).
+
+36 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
+runner battery (27 fixtures) zero regressions; validator outcomes unchanged.

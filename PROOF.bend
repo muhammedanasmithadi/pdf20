@@ -105,3 +105,30 @@ def Laws.null_stored():
 def Laws.null_trailer_missing():
   {==}
 
+def Laws.lex_int_neg():
+  {==}
+
+def Laws.lex_int_pos():
+  {==}
+
+def Laws.lex_real_embed():
+  {==}
+
+def Laws.lex_real_neg():
+  {==}
+
+def Laws.lex_real_lead_dot():
+  {==}
+
+def Laws.lex_real_trail_dot():
+  {==}
+
+def Laws.size_real_rejected():
+  {==}
+
+def Laws.xref_offset_int():
+  {==}
+
+def Laws.xref_offset_real():
+  {==}
+
