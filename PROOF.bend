@@ -169,3 +169,41 @@ def Laws.par_name_empty():
 def Laws.par_str():
   {==}
 
+
+def Laws.hdr_valid():
+  {==}
+
+def Laws.hdr_obj_zero():
+  {==}
+
+def Laws.hdr_obj_neg():
+  {==}
+
+def Laws.hdr_obj_frac():
+  {==}
+
+def Laws.hdr_gen_neg():
+  {==}
+
+def Laws.hdr_gen_frac():
+  {==}
+
+
+def Laws.par_hdr_valid():
+  {==}
+
+def Laws.par_hdr_obj_zero():
+  {==}
+
+def Laws.par_hdr_obj_neg():
+  {==}
+
+def Laws.par_hdr_obj_frac():
+  {==}
+
+def Laws.par_hdr_gen_neg():
+  {==}
+
+def Laws.par_hdr_gen_frac():
+  {==}
+

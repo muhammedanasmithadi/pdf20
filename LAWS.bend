@@ -241,3 +241,47 @@ law par_name_empty:
 law par_str:
   {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{40, Con{97, Con{98, Con{99, Con{41, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.OStr{"abc"}}, Nil{}}} : P.PRes}
 
+
+# Golden laws for indirect object header numbers (7.3.10, 7.3.3).
+# Byte lists are raw ASCII codes.
+
+law hdr_valid:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.ONum{False{}, 42, 0n, 1n}}, Nil{}}} : P.PRes}
+
+law hdr_obj_zero:
+  {P.pfile(Con{48, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}) == P.PErr{"object number shall be a positive integer (7.3.10)"} : P.PRes}
+
+law hdr_obj_neg:
+  {P.pfile(Con{45, Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}) == P.PErr{"object number shall be a positive integer (7.3.10)"} : P.PRes}
+
+law hdr_obj_frac:
+  {P.pfile(Con{49, Con{46, Con{53, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}) == P.PErr{"object number shall be a positive integer (7.3.10)"} : P.PRes}
+
+law hdr_gen_neg:
+  {P.pfile(Con{49, Con{32, Con{45, Con{49, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}) == P.PErr{"generation number shall be a non-negative integer (7.3.10)"} : P.PRes}
+
+law hdr_gen_frac:
+  {P.pfile(Con{49, Con{32, Con{48, Con{46, Con{53, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}) == P.PErr{"generation number shall be a non-negative integer (7.3.10)"} : P.PRes}
+
+
+# Golden laws for indirect object header numbers (7.3.10, 7.3.3).
+# Byte lists are raw ASCII codes.
+
+law par_hdr_valid:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.ONum{False{}, 42, 0n, 1n}}, Nil{}}} : P.PRes}
+
+law par_hdr_obj_zero:
+  {P.pfile(Con{48, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}) == P.PErr{"object number shall be a positive integer (7.3.10)"} : P.PRes}
+
+law par_hdr_obj_neg:
+  {P.pfile(Con{45, Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}) == P.PErr{"object number shall be a positive integer (7.3.10)"} : P.PRes}
+
+law par_hdr_obj_frac:
+  {P.pfile(Con{49, Con{46, Con{53, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}) == P.PErr{"object number shall be a positive integer (7.3.10)"} : P.PRes}
+
+law par_hdr_gen_neg:
+  {P.pfile(Con{49, Con{32, Con{45, Con{49, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}) == P.PErr{"generation number shall be a non-negative integer (7.3.10)"} : P.PRes}
+
+law par_hdr_gen_frac:
+  {P.pfile(Con{49, Con{32, Con{48, Con{46, Con{53, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}) == P.PErr{"generation number shall be a non-negative integer (7.3.10)"} : P.PRes}
+

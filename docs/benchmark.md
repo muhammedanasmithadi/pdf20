@@ -468,7 +468,7 @@ converted from the error-free `XEList` wrapper to the error-carrying
 `XEntryRes` (`XEOk`/`XEErr`) so real offsets/generations propagate as
 diagnostics instead of being silently truncated.
 
-52 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
+64 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
 runner battery (27 fixtures) zero regressions; validator outcomes unchanged.
 
 
@@ -487,3 +487,17 @@ Date: 2026-10-26. Per ISO 7.3.9, "an indirect object reference to a nonexistent 
 The downstream consumers (`VPnO` for page tree root, `VKrO` for page tree kids) each carry explicit `ONil` arms with the missing-key diagnostic.
 
 Two golden laws cover resolution: `res_obj_found` (existing object resolves to its value) and `res_obj_miss` (missing object resolves to `ONil`, i.e. null).
+
+## Indirect object header numbers (7.3.10, 7.3.3)
+
+Date: 2026-10-26. Header numbers (`N G obj`) were stored as `U32` via `u32of`,
+discarding sign and fractional parts — a negative or fractional header number
+parsed with loss (e.g., `-1 obj` → object 1). Now validated at parse time:
+
+- `pnum_hdr_obj` rejects object numbers that are zero, negative, or fractional
+- `pnum` `PN1` arm rejects negative/fractional generations
+- Diagnostics: "object number shall be a positive integer (7.3.10)" and
+  "generation number shall be a non-negative integer (7.3.10)"
+
+Six golden laws: `par_hdr_valid`, `par_hdr_obj_zero`, `par_hdr_obj_neg`,
+`par_hdr_obj_frac`, `par_hdr_gen_neg`, `par_hdr_gen_frac` (48 → 64 laws total).

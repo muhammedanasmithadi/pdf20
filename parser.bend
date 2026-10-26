@@ -250,14 +250,34 @@ def pnumfd(num: Obj, f: Fr, t: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2,
     case x:
       PST{None{}, tt, Con{FBAD{"dictionary key shall be a name (7.3.7)"}, t}, PNil{}, acc}
 
+# ---- header-number validation helpers (7.3.10: positive object numbers,
+# non-negative integer generations; 7.3.3: integer, not real)
+def pnum_hdr_obj(num: Obj, f: Fr, t: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) -> PST:
+  match num:
+    case ONum{False{}, 0, 0n, fden}:
+      PST{None{}, tt, Con{FBAD{"object number shall be a positive integer (7.3.10)"}, t}, PNil{}, acc}
+    case ONum{False{}, w, 0n, fden}:
+      PST{None{}, tt, Con{f, t}, PN1{num}, acc}
+    case x:
+      PST{None{}, tt, Con{FBAD{"object number shall be a positive integer (7.3.10)"}, t}, PNil{}, acc}
+
+def pnum_hdr_gen(num: Obj, f: Fr, t: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>, a: Obj) -> PST:
+  match num:
+    case ONum{False{}, whole, 0n, fden}:
+      PST{None{}, tt, Con{f, t}, PN2{a, num}, acc}
+    case x:
+      PST{None{}, tt, Con{FBAD{"generation number shall be a non-negative integer (7.3.10)"}, t}, PNil{}, acc}
+
 def pnum1(num: Obj, f: Fr, t: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) -> PST:
   match f:
     case FStart{}:
       # first header number opens the pending chain (7.3.10); stk unchanged
-      PST{None{}, tt, Con{f, t}, PN1{num}, acc}
+      # validate: object number must be a positive integer (7.3.10, 7.3.3)
+      pnum_hdr_obj(num, f, t, tt, acc)
     case FNum1{+a}:
       # second header number completes the pending chain (7.3.10)
-      PST{None{}, tt, Con{f, t}, PN2{a, num}, acc}
+      # validate: generation number must be a non-negative integer (7.3.10, 7.3.3)
+      pnum_hdr_gen(num, f, t, tt, acc, a)
     case FNum2{x, y}:
       PST{None{}, tt, Con{FBAD{"obj keyword expected after the header numbers (7.3.10)"}, t}, PNil{}, acc}
     case FArr{els}:
@@ -283,13 +303,36 @@ def pnum0(num: Obj, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) 
       pnum1(num, f, t, tt, acc)
 
 def pnum(neg: Bool, whole: U32, fnum: Nat, fden: Nat, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) -> PST:
-  match pend:
-    case PN1{a}:
-      PST{None{}, tt, stk, PN2{a, ONum{neg, whole, fnum, fden}}, acc}
-    case PN2{a, b}:
-      PST{None{}, tt, pdisp(a, stk), PN2{b, ONum{neg, whole, fnum, fden}}, acc}
-    case PNil{}:
-      pnum0(ONum{neg, whole, fnum, fden}, stk, tt, acc)
+  match neg:
+    case True{}:
+      # negative number: reject only in header context (PN1 = generation number)
+      match pend:
+        case PN1{a}:
+          PST{None{}, tt, Con{FBAD{"generation number shall be a non-negative integer (7.3.10)"}, stk}, PNil{}, acc}
+        case PN2{a, b}:
+          PST{None{}, tt, pdisp(a, stk), PN2{b, ONum{neg, whole, fnum, fden}}, acc}
+        case PNil{}:
+          pnum0(ONum{neg, whole, fnum, fden}, stk, tt, acc)
+    case False{}:
+      match fnum:
+        case 0n:
+          # non-negative integer
+          match pend:
+            case PN1{a}:
+              PST{None{}, tt, stk, PN2{a, ONum{neg, whole, fnum, fden}}, acc}
+            case PN2{a, b}:
+              PST{None{}, tt, pdisp(a, stk), PN2{b, ONum{neg, whole, fnum, fden}}, acc}
+            case PNil{}:
+              pnum0(ONum{neg, whole, fnum, fden}, stk, tt, acc)
+        case 1n+p:
+          # fractional number
+          match pend:
+            case PN1{a}:
+              PST{None{}, tt, Con{FBAD{"generation number shall be a non-negative integer (7.3.10)"}, stk}, PNil{}, acc}
+            case PN2{a, b}:
+              PST{None{}, tt, pdisp(a, stk), PN2{b, ONum{neg, whole, fnum, fden}}, acc}
+            case PNil{}:
+              pnum0(ONum{neg, whole, fnum, fden}, stk, tt, acc)
 
 # ---- names, strings. Both are values; a name additionally opens a
 # dictionary key (7.3.7). Pend release: non-number tokens flush the chain by
@@ -575,7 +618,11 @@ def pword_r(is_obj: Bool, is_r: Bool, +w: String, pend: Pend, stk: List<&2, Fr>,
       # w is `obj`: closes `num gen obj` header (7.3.10)
       match pend:
         case PNil{}:
-          PST{Some{PErr{"obj without header numbers (7.3.10)"}}, tt, stk, PNil{}, acc}
+          match stk:
+            case Con{FBAD{why}, t}:
+              PST{Some{PErr{why}}, tt, Nil{}, PNil{}, acc}
+            case x:
+              PST{Some{PErr{"obj without header numbers (7.3.10)"}}, tt, stk, PNil{}, acc}
         case PN1{a}:
           PST{Some{PErr{"generation number expected (7.3.10)"}}, tt, stk, PNil{}, acc}
         case PN2{a, b}:
