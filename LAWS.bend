@@ -204,3 +204,22 @@ law xref_entry_gen_real:
 
 law xref_entry_int_ok:
   {X.xref_entries(1n, Con{Pdf.TNum{False{}, 5, 0n, 1n}, Con{Pdf.TNum{False{}, 0, 0n, 1n}, Con{Pdf.TWord{"n"}, Nil{}}}}, Nil{}) == X.XEOk{Con{X.XE{0, 0, True{}, 5}, Nil{}}, Nil{}} : X.XEntryRes}
+
+# Golden laws for strings (7.3.4), names (7.3.5), arrays (7.3.6).
+# Byte lists are raw ASCII codes.
+
+law par_arr:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{91, Con{49, Con{32, Con{50, Con{93, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.OArr{Con{P.ONum{False{}, 1, 0n, 1n}, Con{P.ONum{False{}, 2, 0n, 1n}, Nil{}}}}}, Nil{}}} : P.PRes}
+
+law par_hex_str:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{60, Con{52, Con{69, Con{62, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.OStr{"N"}}, Nil{}}} : P.PRes}
+
+law par_name_hash:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{47, Con{65, Con{35, Con{50, Con{48, Con{66, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.OName{"A B"}}, Nil{}}} : P.PRes}
+
+law par_name_empty:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{47, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.OName{""}}, Nil{}}} : P.PRes}
+
+law par_str:
+  {P.pfile(Con{49, Con{32, Con{48, Con{32, Con{111, Con{98, Con{106, Con{32, Con{40, Con{97, Con{98, Con{99, Con{41, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}}) == P.POks{Con{P.BO{1, 0, P.OStr{"abc"}}, Nil{}}} : P.PRes}
+

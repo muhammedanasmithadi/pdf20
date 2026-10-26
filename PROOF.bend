@@ -141,3 +141,19 @@ def Laws.xref_entry_gen_real():
 def Laws.xref_entry_int_ok():
   {==}
 
+
+def Laws.par_arr():
+  {==}
+
+def Laws.par_hex_str():
+  {==}
+
+def Laws.par_name_hash():
+  {==}
+
+def Laws.par_name_empty():
+  {==}
+
+def Laws.par_str():
+  {==}
+
