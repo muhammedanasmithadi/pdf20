@@ -318,8 +318,9 @@ now rides the new path.
 ## v0 limits recorded
 
 - `Extends` is ignored (v0 design decision, documented in spec-index).
-- A stored `true` fails the stored-value parse: the §7.3.3 boolean
-  reader does not exist yet.
+- A stored `true` failed the stored-value parse here (the booleans are
+  §7.3.2, not §7.3.3 as first believed; the keyword reader landed
+  directly after — see the keyword-values section below).
 - A stored stream object would put an `endstream` byte sequence inside
   the object stream's own data, which v0's opaque body-skip (7.3.8.1)
   mistakes for the real terminator; such files mis-align at the lexical
@@ -362,4 +363,77 @@ check), `osh_ord_bad` (the increasing-offset requirement), and
 `osh_start_two_pairs` (the full decode: header pairs, two stored
 objects, the stored page dict and 42 carried into `DOK`). 21 laws
 total, each with its `{==}` proof in `PROOF.bend`, passing both
-`bend PROOF.bend` and `bend PROOF.bend --verdict`.
+`bend PROOF.bend` and `bend PROOF.bend --verdict`.## Keyword values — booleans and null (7.3.2, 7.3.9)
+
+Date: 2026-10-26. Words at value positions were a lenient leftover:
+dictionary and array positions stored any word as a name, object value
+positions fired the week-2 message "obj keyword expected after the header
+numbers (7.3.10)" for a bare `true`. The milestone enforces the value-keyword
+rule and repairs the citation: booleans are 7.3.2, not 7.3.3.
+
+## Design
+
+`pword_kv` classifies every word token once per event: `true`/`false`/`null`
+map to `OBool{True}`/`OBool{False}`/`ONil{}` (7.3.2, 7.3.9), and the
+rejection carries one two-clause diagnostic: "a bare word shall be one of
+the keywords true, false, and null (7.3.2, 7.3.9)" — case-sensitivity
+included, so `True` rejects by the same rule (7.2.3). The classified PWO
+value and the three value-expecting arms in `pword1` (`FHead`, dictionary
+value, array element) share one filing helper `pwo_fil`, which routes
+through the ordinary `pdisp` value machinery. The dictionary KEY position
+now diagnoses "dictionary key shall be a name (7.3.7)" for any word — the
+same words that previously became names there and parsed. `FStart` still
+keeps the raw word for the regime cut, so `PCut` carries `xref`/`trailer`/
+`startxref` (7.5.8.1).
+
+Two dead arms fell out: `pword1`'s `wfval` parameter was always `False` at
+its single call site, feeding an `FNum2` True arm and an `FHead` True arm
+that never fired; the parameter is gone and `FNum2` states its diagnostic
+without the match.
+
+The §7.3.9 companion lands in the validator: a dictionary entry valued
+null answers the required-key lookups as if the entry were omitted. A
+first version put the skip inside the dictionary walk — it discarded the
+pending key match of the previous entry (`<</Type /Catalog ...>>
+/Type /Catalog /Pages null>>` diagnosed "catalog missing Type"), so the
+omission now lives at the six required-key consumers (Size, Root, catalog
+Type/Pages, page tree Type/Kids, kid Type), each with an explicit `ONil`
+arm stating the missing-key diagnostic.
+
+## Results
+
+`booltop` (top-level dict values true/null/false) — XOK then VALID 1 pages.
+`boolstm` (a stored boolean through the type-2 memo) — XOK then VALID.
+`negbkw` (stored `True`) — the keyword diagnostic fires at the parse
+stage. `negnull` (`/Pages null`) — INVALID catalog missing Pages
+(Table 29, 7.7.2). The classic battery is unchanged. One fixture repair
+along the way: the cross-reference-stream fixtures now carry `/Root 1 0 R`
+in the stream dictionary (Table 15: it doubles as the trailer), so the
+7.5.7/7.5.8 family validates — objstm1 and boolstm print VALID 1 pages
+instead of "trailer missing Root", which was a fixture defect, not a
+checker rule.
+
+## Bend 2 mechanics that shaped the code
+
+Arm bodies cannot match a def parameter or re-bind it: the null-skip's
+first version matched the entry value after matching `eq` inside the arm,
+and the checker refused a second time with "can't be matched in this
+position". The compliant pattern is helper-threading — the keyword
+classifier is three tiny defs whose matches sit on passed Bools
+(`pkv_null`/`pkv_false`/`pword_kv`), and the filing is one shared helper.
+For the laws, the machine-built emitter is the only road for two-element
+lists: the hand-written two-entry dictionary law was one close brace
+short, and the bracket-depth audit (the `:` must sit at law depth 1, the
+close must end at depth 0) pinned the exact deficit. Pre-existing and
+recorded: `bend parser.bend` bare stack-overflows on HEAD too; the gates
+are PROOF.bend and the battery.
+
+## Laws proved
+
+Six golden keyword-value laws — `bool_true`, `bool_false` (the keywords
+parse into OBool through the seeded stored-value parser), `bool_case`
+(`True` rejects; the syntax is case-sensitive, 7.2.3), `bool_dict_true`
+(`true` as a dictionary value beside a numeric entry), `null_stored`, and
+`null_trailer_missing` (the null-valued entry answers as the omitted
+entry, Table 15). 27 laws total, both `bend PROOF.bend` and
+`bend PROOF.bend --verdict` green.

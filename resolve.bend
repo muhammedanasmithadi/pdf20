@@ -148,6 +148,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
           match sz:
             case P.ONum{neg, whole, fnum, fden}:
               trav(p, VRt{dict_get("Root", P.ODict{tels}), objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"trailer missing Size (Table 15, 7.5.5)"}
             case x:
               VErr{"trailer Size not a number (Table 15, 7.3.9)"}
 
@@ -163,6 +166,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
           match rt:
             case P.OInd{num, gen}:
               trav(p, VCt{resolve_obj(objs, num, gen, False{}, False{}, P.ONil{}), objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"trailer missing Root (Table 15, 7.5.5)"}
             case x:
               VErr{"trailer Root not an indirect reference (7.3.10, Table 15)"}
 
@@ -192,6 +198,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
           match tp:
             case P.OName{val}:
               trav(p, VCI{String.eq(val, "Catalog"), els, objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"catalog missing Type (Table 29, 7.7.2)"}
             case x:
               VErr{"catalog Type not a name (7.3.5, Table 29)"}
 
@@ -214,6 +223,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
           match pg:
             case P.OInd{num, gen}:
               trav(p, VPn{resolve_obj(objs, num, gen, False{}, False{}, P.ONil{}), objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"catalog missing Pages (Table 29, 7.7.2)"}
             case x:
               VErr{"catalog Pages not an indirect reference (7.3.10, Table 29)"}
 
@@ -243,6 +255,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
           match nt:
             case P.OName{val}:
               trav(p, VNI{String.eq(val, "Pages"), els, objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"page tree root missing Type (Table 30, 7.7.3)"}
             case x:
               VErr{"page tree root Type not a name (7.3.5, Table 30)"}
 
@@ -265,6 +280,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
           match ko:
             case P.OArr{arr}:
               trav(p, VLp{arr, 0, objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"page tree root missing Kids (Table 30, 7.7.3)"}
             case x:
               VErr{"page tree root Kids not an array (7.3.6, Table 30)"}
 
@@ -305,6 +323,9 @@ def trav(fuel: Nat, st: VST) -> ValRes:
           match tp:
             case P.OName{val}:
               trav(p, VKI{String.eq(val, "Page"), rk, cnt, objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"page missing Type (Table 30, 7.7.3)"}
             case x:
               VErr{"page Type not a name (7.3.5, Table 30)"}
 

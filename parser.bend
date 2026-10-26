@@ -454,10 +454,55 @@ def pdict(open: Bool, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: 
         case Con{f, t}:
           pdictf(open, f, t, tt, acc)
 
-# ---- words and regime boundaries (7.3.10, 7.3.8.1). Keyword flags are
-# computed here and passed as Bools to pword1 (no zero-param defs).
+# ---- value keywords (7.3.2, 7.3.9): a bare word at a value position is
+# an object only as the keyword true, false, or null (booleans, then the
+# null object); the syntax is case-sensitive (7.2.3), so True is not a
+# keyword. Meaningful word content elsewhere (obj, endobj, stream, ...)
+# is handled by the keyword flags; the residue has no object reading.
 
-def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstream: Bool, wendstream: Bool, wxref: Bool, wtrailer: Bool, wstartxref: Bool, wxreg: Bool, toks: List<&2, Lx.Tok>, pend: Pend, acc: List<&2, BO>) -> PST:
+type PWO is Data:
+  PWo{v: Obj}
+  PWe{why: String}
+
+# the two step helpers keep every match on a passed Bool (no computed
+# match scrutinees); the residue diagnostic cites the keyword clauses.
+
+def pkv_null(is_n: Bool) -> PWO:
+  match is_n:
+    case True{}:
+      PWo{ONil{}}
+    case False{}:
+      PWe{"a bare word shall be one of the keywords true, false, and null (7.3.2, 7.3.9)"}
+
+def pkv_false(w: String, is_f: Bool) -> PWO:
+  match is_f:
+    case True{}:
+      PWo{OBool{False{}}}
+    case False{}:
+      pkv_null(String.eq(w, "null"))
+
+def pword_kv(+w: String, is_t: Bool) -> PWO:
+  match is_t:
+    case True{}:
+      PWo{OBool{True{}}}
+    case False{}:
+      pkv_false(w, String.eq(w, "false"))
+
+# the word value files like any other value: pdisp covers the value
+# expecting frames (FHead, array, dictionary value), PWe diagnoses
+
+def pwo_fil(wv: PWO, f: Fr, t: List<&2, Fr>, toks: List<&2, Lx.Tok>, acc: List<&2, BO>) -> PST:
+  match wv:
+    case PWo{v}:
+      PST{None{}, toks, pdisp(v, Con{f, t}), PNil{}, acc}
+    case PWe{why}:
+      PST{None{}, toks, Con{FBAD{why}, t}, PNil{}, acc}
+
+# ---- words and regime boundaries (7.3.10, 7.3.8.1). Keyword flags are
+# computed here and passed to pword1 as Bools alongside the word's PWO
+# classification (no zero-param defs).
+
+def pword1(+w: String, wv: PWO, f: Fr, t: List<&2, Fr>, wsendobj: Bool, wstream: Bool, wendstream: Bool, wxref: Bool, wtrailer: Bool, wstartxref: Bool, wxreg: Bool, toks: List<&2, Lx.Tok>, pend: Pend, acc: List<&2, BO>) -> PST:
   match f:
     case FStream{num, gen, d}:
       # only the body event may follow `stream` (7.3.8.1); words are errors
@@ -470,12 +515,9 @@ def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstre
         case False{}:
           PST{None{}, toks, Con{FBAD{"endstream expected after the stream body (7.3.8.1)"}, t}, PNil{}, acc}
     case FNum2{x, y}:
-      match wfval:
-        case True{}:
-          # `num gen obj`: header complete; value phase begins
-          PST{None{}, toks, Con{FHead{x, y}, t}, PNil{}, acc}
-        case False{}:
-          PST{None{}, toks, Con{FBAD{"obj keyword expected after the header numbers (7.3.10)"}, t}, PNil{}, acc}
+      # a word after the header numbers closes the header only as `obj`
+      # (handled by pword_r); any other word diagnoses here (7.3.10)
+      PST{None{}, toks, Con{FBAD{"obj keyword expected after the header numbers (7.3.10)"}, t}, PNil{}, acc}
     case FPost{num, gen, v}:
       match wsendobj:
         case True{}:
@@ -496,19 +538,19 @@ def pword1(w: String, f: Fr, t: List<&2, Fr>, wfval: Bool, wsendobj: Bool, wstre
             case False{}:
               PST{None{}, toks, Con{FBAD{"endobj (or stream) expected after the value (7.3.10)"}, t}, PNil{}, acc}
     case FHead{x, y}:
-      match wfval:
-        case True{}:
-          PST{None{}, toks, Con{FHead{x, y}, t}, PN1{OName{w}}, acc}
-        case False{}:
-          PST{None{}, toks, Con{FBAD{"obj keyword expected after the header numbers (7.3.10)"}, t}, PNil{}, acc}
+      # true/false/null file the object value; other words diagnose
+      pwo_fil(wv, f, t, toks, acc)
     case FD{els, k}:
       match k:
         case Some{k}:
-          PST{None{}, toks, Con{FBAD{"dictionary key shall be a name (7.3.7)"}, t}, PNil{}, acc}
+          # the entry value takes the same word rule (7.3.2, 7.3.9)
+          pwo_fil(wv, f, t, toks, acc)
         case None{}:
-          PST{None{}, toks, pdisp(OName{w}, Con{f, t}), PNil{}, acc}
+          # the key slot expects a name; a bare word is not a name (7.3.7)
+          PST{None{}, toks, Con{FBAD{"dictionary key shall be a name (7.3.7)"}, t}, PNil{}, acc}
     case FArr{els}:
-      PST{None{}, toks, pdisp(OName{w}, Con{f, t}), PNil{}, acc}
+      # array elements take the same word rule (7.3.2, 7.3.9)
+      pwo_fil(wv, f, t, toks, acc)
     case FStart{}:
       match wxreg:
         case True{}:
@@ -565,7 +607,7 @@ def pword_r(is_obj: Bool, is_r: Bool, +w: String, pend: Pend, stk: List<&2, Fr>,
                 case Nil{}:
                   PST{None{}, tt, Con{FBAD{"object value expected (7.3.10)"}, Nil{}}, PNil{}, acc}
                 case Con{f, t}:
-                  pword1(w, f, t, False{}, String.eq(w, "endobj"), String.eq(w, "stream"), String.eq(w, "endstream"), String.eq(w, "xref"), String.eq(w, "trailer"), String.eq(w, "startxref"), (String.eq(w, "xref") || String.eq(w, "trailer") || String.eq(w, "startxref")), tt, PNil{}, acc)
+                  pword1(w, pword_kv(w, String.eq(w, "true")), f, t, String.eq(w, "endobj"), String.eq(w, "stream"), String.eq(w, "endstream"), String.eq(w, "xref"), String.eq(w, "trailer"), String.eq(w, "startxref"), (String.eq(w, "xref") || String.eq(w, "trailer") || String.eq(w, "startxref")), tt, PNil{}, acc)
             case PN1{a}:
               # flush `a`, then re-feed `w` with a cleared chain
               PST{None{}, Con{Lx.TWord{w}, tt}, pdisp(a, stk), PNil{}, acc}

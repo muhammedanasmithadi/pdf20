@@ -85,3 +85,23 @@ def Laws.osh_ord_bad():
 def Laws.osh_start_two_pairs():
   {==}
 
+
+
+def Laws.bool_true():
+  {==}
+
+def Laws.bool_false():
+  {==}
+
+def Laws.bool_case():
+  {==}
+
+def Laws.bool_dict_true():
+  {==}
+
+def Laws.null_stored():
+  {==}
+
+def Laws.null_trailer_missing():
+  {==}
+

@@ -11,7 +11,10 @@ Errata page last updated 2026-03.
 | Clause | Subject | v0 deliverable |
 |---|---|---|
 | 7.1–7.2 | Conventions, lexical rules, whitespace, comments | lexer (comments skipped) |
-| 7.3 | Data types: booleans, numbers (real precision), strings (Tables 3), names, arrays, dictionaries, streams (Table 5), null | node types + parser |
+| 7.3 | Data types: booleans, numbers (real precision), strings (Table 3), names, arrays, dictionaries, streams (Table 5), null | node types + parser |
+| 7.3.2 | Boolean objects — keywords true and false, case-sensitive (7.2.3) | `true`/`false`/`null` parse at value positions via `pword_kv` → `PWO` (FHead, dict value, array); bare-word rejection: "a bare word shall be one of the keywords true, false, and null (7.3.2, 7.3.9)" |
+| 7.3.9 | Null object — keyword null; null-valued dictionary entry answers required-key lookups as omitted | validator consumers for Size, Root, catalog Type/Pages, page tree Type/Kids, kid Type each carry an explicit `ONil` arm with the missing-key diagnostic |
+| 7.3.7 | Dictionary objects — keys shall be names | dictionary KEY slot now diagnoses "dictionary key shall be a name (7.3.7)" for bare words |
 | 7.4 | Filters | streams stay opaque; only /Length checked |
 | 7.3.8 | Stream syntax (Table 5, Length, endstream) | lexer body-skip state; audit pass checks data against Length, ≤2 extra EOL bytes (7.3.8.2)
 | 7.5.8 | Cross-reference streams (Tables 17–18) | raw unfiltered decode: W/Size/Index checks, big-endian rows, dict doubles as trailer; Filter/multi-XRef diagnostics; type-2 rows resolve into object streams (7.5.7)

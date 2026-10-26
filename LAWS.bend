@@ -125,3 +125,36 @@ law osh_ord_bad:
 
 law osh_start_two_pairs:
   {X.osh_start("3 8 4 23<</Type /Page>>42", 8, 2n) == X.DOK{Con{P.BO{3, 0, P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Nil{}}}}, Con{P.BO{4, 0, P.ONum{False{}, 42, 0n, 1n}}, Nil{}}}} : X.OSDc}
+# Golden laws for the keyword values (7.3.2, 7.3.9). X = xref.bend,
+# R = resolve.bend. The bare words true/false/null are the only object
+# values among words (7.3.2 booleans, 7.3.9 null; the syntax is
+# case-sensitive, 7.2.3, so True is not a keyword); a dictionary entry
+# valued null answers the required-key lookups as if omitted (7.3.9,
+# Table 15). String literals norm (see the 7.5.7 section).
+
+# Golden laws for the keyword values (7.3.2, 7.3.9). X = xref.bend,
+# R = resolve.bend. The bare words true/false/null are the only object
+# values among words (7.3.2 booleans, 7.3.9 null; the syntax is
+# case-sensitive, 7.2.3, so True is not a keyword); a dictionary entry
+# valued null answers the required-key lookups as if omitted (7.3.9,
+# Table 15). String literals norm (see the 7.5.7 section).
+
+law bool_true:
+  {X.os_slice_parse("true") == X.OSV{P.BO{0, 0, P.OBool{True{}}}} : X.OSSl}
+
+law bool_false:
+  {X.os_slice_parse("false") == X.OSV{P.BO{0, 0, P.OBool{False{}}}} : X.OSSl}
+
+law bool_case:
+  {X.os_slice_parse("True") == X.OSW{"a bare word shall be one of the keywords true, false, and null (7.3.2, 7.3.9)"} : X.OSSl}
+
+law bool_dict_true:
+  {X.os_slice_parse("<</A 1 /Raw true>>") == X.OSV{P.BO{0, 0, P.ODict{Con{P.PE{"A", P.ONum{False{}, 1, 0n, 1n}}, Con{P.PE{"Raw", P.OBool{True{}}}, Nil{}}}}}} : X.OSSl}
+
+law null_stored:
+  {X.os_slice_parse("null") == X.OSV{P.BO{0, 0, P.ONil{}}} : X.OSSl}
+
+# the null-valued /Size entry answers the required-key lookup as the
+# omitted entry (7.3.9, Table 15): the walker diagnoses the missing key
+law null_trailer_missing:
+  {R.trav(4n, R.VSzO{P.ONil{}, Nil{}, Nil{}}) == R.VErr{"trailer missing Size (Table 15, 7.5.5)"} : R.ValRes}
