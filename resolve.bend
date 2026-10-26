@@ -30,6 +30,8 @@ type VST is Data:
   VSz{sg: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
   VSzEnc{enc: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
   VSzO{sz: P.Obj, tels: List<&2, P.PEntry>, objs: List<&2, P.BO>}
+  VPr{pr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
+  VPrO{rt: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VRt{rg: Resolved, objs: List<&2, P.BO>}
   VRtO{rt: P.Obj, objs: List<&2, P.BO>}
   VCt{cr: Resolved, objs: List<&2, P.BO>}
@@ -330,10 +332,29 @@ def trav(fuel: Nat, st: VST) -> ValRes:
             case P.ONil{}:
               # a null-valued page tree kid is the omitted entry (7.3.9)
               VErr{"page tree kid missing (Table 30, 7.7.3)"}
-            case P.ODict{els}:
-              trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
+            case P.ODict{+els}:
+              # check Parent (required on Page, Table 30)
+              trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, objs})
             case x:
               VErr{"page tree kid not a dictionary (7.3.7, Table 30)"}
+
+        # -- page Parent (Table 30): required entry, indirect reference
+        case VPr{pr, els, rk, cnt, objs}:
+          match pr:
+            case Res{rt}:
+              trav(p, VPrO{rt, els, rk, cnt, objs})
+            case RErr{why}:
+              VErr{"page missing Parent (Table 30, 7.7.3)"}
+
+        case VPrO{rt, els, rk, cnt, objs}:
+          match rt:
+            case P.OInd{num, gen}:
+              trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
+            case P.ONil{}:
+              # a null-valued entry is the omitted entry (7.3.9)
+              VErr{"page missing Parent (Table 30, 7.7.3)"}
+            case x:
+              VErr{"page Parent not an indirect reference (7.3.10, Table 30)"}
 
         case VKt{td, rk, cnt, objs}:
           match td:

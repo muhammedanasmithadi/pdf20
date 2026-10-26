@@ -468,9 +468,22 @@ converted from the error-free `XEList` wrapper to the error-carrying
 `XEntryRes` (`XEOk`/`XEErr`) so real offsets/generations propagate as
 diagnostics instead of being silently truncated.
 
-64 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
+65 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
 runner battery (27 fixtures) zero regressions; validator outcomes unchanged.
 
+
+## Page parent validation (7.7.3, Table 30)
+
+Date: 2026-10-26. Page dictionaries require a `Parent` entry (Table 30) that shall
+be an indirect reference to the page tree node. The validator now checks this:
+
+- `VPr` state validates Parent via `dict_get("Parent", ...)` with `Res`/`RErr` arms
+- `VPrO` state validates the resolved Parent is an `OInd` (indirect reference)
+- Null-valued Parent → "page missing Parent (Table 30, 7.7.3)" (per 7.3.9)
+- Missing Parent → "page missing Parent (Table 30, 7.7.3)"
+
+Two golden laws: `val_one_page` (updated to include Parent on page 3) and
+`val_page_no_parent` (page without Parent → diagnostic).
 
 ## Encryption (7.6)
 
@@ -500,4 +513,4 @@ parsed with loss (e.g., `-1 obj` → object 1). Now validated at parse time:
   "generation number shall be a non-negative integer (7.3.10)"
 
 Six golden laws: `par_hdr_valid`, `par_hdr_obj_zero`, `par_hdr_obj_neg`,
-`par_hdr_obj_frac`, `par_hdr_gen_neg`, `par_hdr_gen_frac` (48 → 64 laws total).
+`par_hdr_obj_frac`, `par_hdr_gen_neg`, `par_hdr_gen_frac` (48 → 65 laws total).
