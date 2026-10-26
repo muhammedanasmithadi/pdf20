@@ -100,6 +100,7 @@ law dict_get_encrypt_missing:
 law val_encrypt_rejected:
   {R.validate(X.FullRes{Nil{}, Nil{}, P.ODict{Con{P.PE{"Encrypt", P.OInd{4, 0}}, Nil{}}}, 0}) == R.VErr{"document is encrypted (7.6); encryption not supported in v0"} : R.ValRes}
 
+# check_header_ver helper law (7.5.2)
 # Golden laws for the cross-reference stream milestone (7.5.8). X = xref.bend.
 
 # The lexer hands the parser a TStreamBody token carrying opaque stream data
