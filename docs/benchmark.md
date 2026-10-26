@@ -268,3 +268,98 @@ site, and match scrutinees that are re-read in an arm need the mark too.
 One affine subtlety worth recording: a def parameter consumed by two
 sibling arms must be marked at the definition site, while the same reuse
 across separate top-level arms stays plain.
+
+## Week 6 — object streams (§7.5.7)
+
+Date: 2026-10-26. Type-2 cross-reference rows now resolve: the referenced
+object stream decodes, and every compressed object takes its stored value.
+The row's `objstm` + `idx` halves are checked in one memo walk (Table 18,
+7.5.8.3): the named object must be a stream present in the object table,
+the index must fall within the stream's stored objects, and the decode is
+memoized per stream so several rows over one stream walk it once.
+
+The decode is one self-recursive state machine `osh` (states `SGo`/`SOrd`/
+`SCar`/`SPai`/`SIns`/`SBad`) over Nat fuel, four mechanisms strung on the
+Table 16 dictionary:
+
+1. The dict walk `xodw` collects `Type`/`N`/`First`: all three must be
+   present and direct, `N`/`First` non-negative integers, `Type` is
+   `ObjStm` (Table 16, 7.5.7). A `Filter` entry rejects in v0 (Table 5
+   Filter, 7.4); `Extends` is ignored in v0.
+2. `First` doubles as the pair header's byte budget (Table 16: First is
+   the byte offset of the first compressed object, so the header must
+   end before it). Per 7.5.7 each pair's second integer is a byte offset
+   measured from the start of the raw stream data — First carries the
+   first object's offset — so the raw string threads through the scan
+   states, and slicing never sees the consumed header tail.
+3. The offsets shall be in increasing order (7.5.7); the comparison
+   rides as a Bool into the next state.
+4. Slicing cuts `[off_i, off_{i+1})` from the raw data (`take`/`sdrop`),
+   and each slice parses through the seeded `P.pval` with a synthetic
+   frame plus an `endobj` token — stored values carry no `num gen obj /
+   endobj` wrapper (NOTE 7, errata). A stream object or a bare object
+   reference gets its clause (7.5.7); anything else joins the object
+   table at generation 0.
+
+## Results
+
+Positive `objstm1.pdf`: obj3 the stored page dict and obj4 the number 42,
+reached through two type-2 rows — `XOK 6 entries, objs=6`. Seven
+negatives fire exactly one clause each: a row naming a missing stream
+(Table 18, 7.5.8.3), `N` above the stored pairs (7.5.7), an offset below
+its predecessor (7.5.7), `First` beyond the data (Table 16, 7.5.7),
+`Filter` in v0 (Table 5 Filter, 7.4), a stored bare reference (7.5.7),
+an index past the stored count (Table 18, 7.5.8.3). The classic battery
+is unchanged. One flip is deliberate: `negtype2` now reports "an object
+stream shall be a stream object (7.5.7)" instead of the week-5 type-2
+stub — its row names an existing non-stream object, and the row check
+now rides the new path.
+
+## v0 limits recorded
+
+- `Extends` is ignored (v0 design decision, documented in spec-index).
+- A stored `true` fails the stored-value parse: the §7.3.3 boolean
+  reader does not exist yet.
+- A stored stream object would put an `endstream` byte sequence inside
+  the object stream's own data, which v0's opaque body-skip (7.3.8.1)
+  mistakes for the real terminator; such files mis-align at the lexical
+  stage before the object-stream rule can fire. The stored-stream
+  rejection stays in code (`os_leg`, 7.5.7), and the fixture is
+  documented as unlexable in v0.
+
+## Bend 2 mechanics that shaped the code
+
+The first positive fixture passed the scanner and still decoded one
+stored object instead of two. Probing `os_decode` directly exposed two
+silent-list bugs, fixed together:
+
+- `SPai` consumed the next header pair only to bound the current slice
+  and dropped it from the walk, so the pair's object never sliced. The
+  pair now re-attaches to the head of the remaining list
+  (`Con{n2, Con{o2, rest2}}`), with `+` marks at both use sites.
+- `os_ran` decrements the object's start offset to zero while checking
+  it against the data length, then bound the decremented value into
+  `SIns` — every slice then cut from position 0 of its data. The
+  original offset threads through as a dedicated `off0` parameter, and
+  the raw string rides past the scan states in a new `SGo` field.
+
+Three matcher literalisms worth recording: fuel built from a def-bound
+Nat reused later in the seeded recursion blames the `1n+p` remainder
+binder ("p consumed more than once"), so the fuel formula avoids the
+parameter entirely — `len²` bounds `N·len` because a header pair takes
+at least two bytes. Reusing a U32/String parameter needs `+` at the
+definition site (`+first`, `+dat`; the `+stmn` precedent). And string
+literals norm cleanly in laws here, unlike the week-1 escape-carrying
+lex inputs that needed raw byte codes — the deep constructor trees
+(26 nested `SCon`s) were what broke the law parser.
+
+## Laws proved
+
+Six golden §7.5.7 laws in `LAWS.bend` — `os_take_two` (slice window),
+`os_drop_header8` (First-budget seek past the header), `osh_fuel_gate`
+(fuel exhaustion errs, never crashes), `os_gen_gen_zero` (generation
+check), `osh_ord_bad` (the increasing-offset requirement), and
+`osh_start_two_pairs` (the full decode: header pairs, two stored
+objects, the stored page dict and 42 carried into `DOK`). 21 laws
+total, each with its `{==}` proof in `PROOF.bend`, passing both
+`bend PROOF.bend` and `bend PROOF.bend --verdict`.

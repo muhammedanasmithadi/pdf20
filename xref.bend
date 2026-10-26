@@ -10,6 +10,9 @@ import ./parser.bend as P
 
 type XE is Data:
   XE{num: U32, gen: U32, in_use: Bool, offset: U32}
+  # type-2 entry: the object lives in the object stream `stmn` at
+  # position `idxn` (Table 18, 7.5.8.3)
+  XEC{num: U32, stmn: U32, idxn: U32}
 
 
 # ---- xref parse result
@@ -833,7 +836,13 @@ def xrw(fuel: Nat, st: RSt) -> XRRes:
                 case NRid{f2, dat4}:
                   xrw(f, RXr{cnt, p, peer, U32.add(nxt, 1), dat4, w0, w1, w2, Con{XE{nxt, f2, True{}, f1}, acc}})
             case 2n:
-              XRErr{"compressed cross-reference entries (type 2) are not supported in v0 (7.5.7)"}
+              # type 2: the object lives in the object stream named by
+              # field 2 (f1), at the field-3 position (f2) (Table 18, 7.5.8.3)
+              match r2:
+                case NREnd{}:
+                  XRErr{"not enough bytes for the cross-reference subsection (7.5.8.3)"}
+                case NRid{f2, dat4}:
+                  xrw(f, RXr{cnt, p, peer, U32.add(nxt, 1), dat4, w0, w1, w2, Con{XEC{nxt, f1, f2}, acc}})
             case 3n+s:
               # any other type references the null object (7.5.8.3): the
               # row keeps its position as a free placeholder
@@ -863,13 +872,609 @@ def xr(+p: List<&2, U32>, peer: U32, nxt: U32, +dat: String, w0: Nat, w1: Nat, w
   xrw(Nat.add(Nat.mul(6n, String.length(dat)), Nat.add(Nat.mul(2n, List.length(&2, U32, p)), 16n)), RXr{0n, p, peer, nxt, dat, w0, w1, w2, Nil{}})
 
 
+# ---- object streams (7.5.7). A type-2 cross-reference entry (Table 18,
+# 7.5.8.3) stores the object in an object stream: field 2 names the stream,
+# field 3 the position within the stream's N stored objects. The stream's
+# dictionary carries the Table 16 entries; its data holds N header pairs
+# (object number, byte offset relative to the First entry) and then the N
+# objects, values only (7.5.7). v0 decodes raw (unfiltered) streams and
+# merges the stored objects into the file's object table as generation-zero
+# indirect objects; Extends collections are ignored in v0.
+
+type OSRes is Data:
+  OSOK{memos: List<&2, OSP>}
+  OSErr{why: String}
+
+type OSP is Data:
+  OSP{stm: U32, objs: List<&2, P.BO>}
+
+type MRes is Data:
+  MHit{objs: List<&2, P.BO>}
+  MMiss{}
+
+type OBF is Data:
+  OBf{bo: P.BO}
+  OBfNo{}
+
+type OSDc is Data:
+  DOK{objs: List<&2, P.BO>}
+  DErr{why: String}
+
+type OSDR is Data:
+  OSDok{t: Bool, tv: P.Obj, n: Bool, nv: P.Obj, f: Bool, fv: P.Obj, fil: Bool}
+
+type OSInt is Data:
+  ISok{v: U32}
+  ISbad{}
+
+# header and slicing state (7.5.7): the scan walks the bytes before First,
+# the walk checks the offsets increase, slicing cuts each object out
+type OSGSt is Data:
+  SGo{dat: String, raw: String, left: Nat, remn: Nat, phase: Nat, acc: U32, mode: Nat, pairs: List<&2, U32>}
+  SOrd{orig: List<&2, U32>, walk: List<&2, U32>, prev: U32, first: Bool, dat: String, acc: List<&2, P.BO>}
+  SCar{pairs: List<&2, U32>, dat: String, acc: List<&2, P.BO>}
+  SPai{rest: List<&2, U32>, num: U32, off: U32, dat: String, acc: List<&2, P.BO>}
+  SIns{rest: List<&2, U32>, n2: U32, o2: U32, oend: Nat, num: U32, offn: Nat, dat: String, acc: List<&2, P.BO>}
+  SBad{why: String}
+
+type OSSl is Data:
+  OSV{bo: P.BO}
+  OSW{why: String}
+
+type XSt is Data:
+  SXr{rows: List<&2, XE>, robj: List<&2, P.BO>, acc: List<&2, OSP>}
+  SXm{mres: MRes, stmn: U32, idxn: U32, rows: List<&2, XE>, robj: List<&2, P.BO>, acc: List<&2, OSP>}
+  SXf{fr: OBF, stmn: U32, idxn: U32, rows: List<&2, XE>, robj: List<&2, P.BO>, acc: List<&2, OSP>}
+  SXo{res: OSDc, stmn: U32, idxn: U32, rows: List<&2, XE>, robj: List<&2, P.BO>, acc: List<&2, OSP>}
+  SXb{bad: Bool, stmn: U32, objs: List<&2, P.BO>, rows: List<&2, XE>, robj: List<&2, P.BO>, acc: List<&2, OSP>}
+  SXi{bad: Bool, rows: List<&2, XE>, robj: List<&2, P.BO>, acc: List<&2, OSP>}
+
+# ---- slice take: keep the first n characters of a string (7.5.7: each
+# stored object spans from its header offset to the next offset, or the
+# end of the data).
+
+def os_take(n: Nat, +s: String) -> String:
+  match n:
+    case 0n:
+      SNil{}
+    case 1n+m:
+      match s:
+        case SNil{}:
+          SNil{}
+        case SCon{h, tl}:
+          SCon{h, os_take(m, tl)}
+
+# ---- the stored-value parser (7.5.7: only the values are stored; the obj
+# and endobj keywords are not (NOTE 7, errata)): the slice parses as one
+# indirect object behind a synthetic frame, like the trailer dictionary.
+
+def os_slice_pk(pst: P.PST) -> OSSl:
+  match pst:
+    case P.PST{stop, toks, stk, pend, acc}:
+      match stop:
+        case Some{res}:
+          match res:
+            case P.POks{bos}:
+              match bos:
+                case Con{bo, rest}:
+                  OSV{bo}
+                case x2:
+                  OSW{"an object in an object stream shall be present (7.5.7)"}
+            case P.PCut{bos, kw}:
+              OSW{"an object in an object stream shall not stop the parse (internal)"}
+            case P.PErr{why}:
+              OSW{why}
+        case None{}:
+          OSW{"an object in an object stream shall terminate (7.5.7)"}
+
+def os_slice_p(+toks: List<&2, Lx.Tok>) -> OSSl:
+  match toks:
+    case Nil{}:
+      OSW{"an object in an object stream shall be present (7.5.7)"}
+    case x:
+      os_slice_pk(
+        P.pval(Nat.add(Nat.mul(Nat.add(List.length(&2, Lx.Tok, toks), 1n), 2n), 8n),
+          P.PST{None{}, List.append(&2, Lx.Tok, toks, Con{Lx.TWord{"endobj"}, Nil{}}),
+                Con{P.FHead{P.ONum{False{}, 0, 0n, 1n}, P.ONum{False{}, 0, 0n, 1n}}, Nil{}},
+                P.PNil{}, Nil{}}))
+
+def os_slice_w(res: Lx.Lex) -> OSSl:
+  match res:
+    case Lx.LexErr{why}:
+      OSW{why}
+    case Lx.Lexed{toks}:
+      os_slice_p(toks)
+
+def os_slice_parse(slc: String) -> OSSl:
+  os_slice_w(Lx.lex(P.str_byts(slc)))
+
+# ---- the header scan step (7.5.7): N pairs of integers separated by
+# white space, before the First offset. `left` is the byte budget from
+# the First entry; `remn` counts the pairs still unread; `phase` 0 names
+# an object number, 1 an offset; `mode` 0/1 = outside/inside a number.
+
+def os_close(phase: Nat, remn: Nat, dat: String, left: Nat, val: U32, raw: String, pairs: List<&2, U32>) -> OSGSt:
+  match phase:
+    case 0n:
+      # the number is an object number; an offset follows (7.5.7)
+      SGo{dat, raw, left, remn, 1n, 0, 0n, Con{val, pairs}}
+    case 1n+p2:
+      match remn:
+        case 0n:
+          # an over-close: the header is malformed (7.5.7)
+          SBad{"the object stream header shall contain N pairs of integers (7.5.7)"}
+        case 1n:
+          # the last pair completed: the offsets get their order check
+          # (7.5.7/NOTE: the byte offsets shall be in increasing order)
+          +fwd : List<&2, U32> = List.reverse(&2, U32, Con{val, pairs})
+          SOrd{fwd, fwd, 0, True{}, raw, Nil{}}
+        case 1n+q:
+          SGo{dat, raw, left, q, 0n, 0, 0n, Con{val, pairs}}
+
+def os_dec(dat: String, left: Nat, remn: Nat, phase: Nat, acc: U32, mode: Nat, raw: String, pairs: List<&2, U32>) -> OSGSt:
+  match left:
+    case 0n:
+      match mode:
+        case 0n:
+          # the budget is spent before the header completes (Table 16)
+          SBad{"the header of an object stream shall end before the First offset (Table 16, 7.5.7)"}
+        case 1n+s:
+          os_close(phase, remn, dat, 0n, acc, raw, pairs)
+    case 1n+left2:
+      SGo{dat, raw, left2, remn, phase, acc, mode, pairs}
+
+def s0(d: Bool, w: Bool, h: Char, dv: U32, tl: String, left: Nat, remn: Nat, phase: Nat, raw: String, pairs: List<&2, U32>) -> OSGSt:
+  match d:
+    case True{}:
+      # the number begins; its first digit rides in as the accumulator
+      os_dec(tl, left, remn, phase, dv, 1n, raw, pairs)
+    case False{}:
+      match w:
+        case True{}:
+          # white space separates the pair items (7.5.7)
+          os_dec(tl, left, remn, phase, 0, 0n, raw, pairs)
+        case False{}:
+          SBad{"the object stream header shall contain N pairs of integers (7.5.7)"}
+
+def s1(d: Bool, w: Bool, h: Char, acc: U32, dv: U32, tl: String, left: Nat, remn: Nat, phase: Nat, raw: String, pairs: List<&2, U32>) -> OSGSt:
+  match d:
+    case True{}:
+      # the number extends (7.5.7: pairs of integers)
+      os_dec(tl, left, remn, phase, U32.add(U32.mul(acc, 10), dv), 1n, raw, pairs)
+    case False{}:
+      match w:
+        case True{}:
+          # the number closed at white space (7.5.7)
+          os_close(phase, remn, tl, left, acc, raw, pairs)
+        case False{}:
+          # closed by a non-digit byte: it stays for the object region
+          # (7.5.7: A PDF processor shall rely on the First entry)
+          os_close(phase, remn, SCon{h, tl}, left, acc, raw, pairs)
+
+# ---- the offset-order check (7.5.7): the computed comparison rides in
+# as a Bool parameter and the walk continues.
+
+def os_ordchk(orig: List<&2, U32>, rest2: List<&2, U32>, off2: U32, dat: String, acc: List<&2, P.BO>, ok: Bool) -> OSGSt:
+  match ok:
+    case True{}:
+      SOrd{orig, rest2, off2, False{}, dat, acc}
+    case False{}:
+      SBad{"the offsets in an object stream shall be in increasing order (7.5.7)"}
+
+# ---- the in-data check (7.5.7): the object's start offset shall fall
+# within the data; the two copies decrement together, so no Bool rides.
+
+def os_ran(offn: Nat, lenn: Nat, rest: List<&2, U32>, n2: U32, o2: U32, oend: Nat, num: U32, off0: Nat, dat: String, acc: List<&2, P.BO>) -> OSGSt:
+  match offn:
+    case 0n:
+      SIns{rest, n2, o2, oend, num, off0, dat, acc}
+    case 1n+o:
+      match lenn:
+        case 0n:
+          SBad{"an object in an object stream shall start within the stream data (7.5.7)"}
+        case 1n+l:
+          os_ran(o, l, rest, n2, o2, oend, num, off0, dat, acc)
+
+# ---- the stored-object legality check (7.5.7): stream objects and naked
+# references are not stored; anything else joins the table as generation
+# zero. The parsed value arrives as a parameter; the check terminates.
+
+def os_leg(stg: OSSl, rest: List<&2, U32>, num: U32, dat: String, acc: List<&2, P.BO>) -> OSGSt:
+  match stg:
+    case OSW{why}:
+      SBad{why}
+    case OSV{P.BO{num2, gen2, o}}:
+      match o:
+        case P.OStream{d, datx}:
+          SBad{"stream objects shall not be stored in an object stream (7.5.7)"}
+        case P.OInd{rnum, rgen}:
+          SBad{"an object in an object stream shall not consist solely of an object reference (7.5.7)"}
+        case val2:
+          SCar{rest, dat, Con{P.BO{num, 0, o}, acc}}
+
+# ---- the header and slicing driver: one state step per fuel unit;
+# helpers return states in argument position, in the style of the lexer.
+
+def osh(f: Nat, st: OSGSt) -> OSDc:
+  match f:
+    case 0n:
+      DErr{"out of object stream header fuel (internal)"}
+    case 1n+f2:
+      match st:
+        case SBad{why}:
+          DErr{why}
+        case SGo{dat, raw, left, remn, phase, acc, mode, pairs}:
+          match dat:
+            case SNil{}:
+              match mode:
+                case 0n:
+                  DErr{"the object stream header shall contain N pairs of integers (7.5.7)"}
+                case 1n+s:
+                  osh(f2, os_close(phase, remn, SNil{}, left, acc, raw, pairs))
+            case SCon{+h, tl}:
+              match mode:
+                case 0n:
+                  osh(f2, s0(Lx.is_digit(Char.to_u32(h)), Lx.is_ws(Char.to_u32(h)), h, Lx.digv(Char.to_u32(h)), tl, left, remn, phase, raw, pairs))
+                case 1n+s:
+                  osh(f2, s1(Lx.is_digit(Char.to_u32(h)), Lx.is_ws(Char.to_u32(h)), h, acc, Lx.digv(Char.to_u32(h)), tl, left, remn, phase, raw, pairs))
+        case SOrd{orig, walk, prev, first, dat, acc}:
+          match walk:
+            case Nil{}:
+              # the header held the N pairs (7.5.7): slicing starts
+              osh(f2, SCar{orig, dat, acc})
+            case Con{n2, Con{+off2, rest2}}:
+              match first:
+                case True{}:
+                  osh(f2, SOrd{orig, rest2, off2, False{}, dat, acc})
+                case False{}:
+                  osh(f2, os_ordchk(orig, rest2, off2, dat, acc, Nat.is_lt(U32.to_nat(prev), U32.to_nat(off2))))
+            case tail1:
+              DErr{"the object stream header shall contain N pairs of integers (7.5.7)"}
+        case SCar{pairs, dat, acc}:
+          match pairs:
+            case Nil{}:
+              # all stored objects surfaced (7.5.7)
+              DOK{List.reverse(&2, P.BO, acc)}
+            case Con{num, Con{off, rest}}:
+              osh(f2, SPai{rest, num, off, dat, acc})
+            case tail2:
+              DErr{"the object stream header shall contain N pairs of integers (7.5.7)"}
+        case SPai{rest, num, +off, +dat, acc}:
+          match rest:
+            case Nil{}:
+              # the last object spans to the end of the data (7.5.7)
+              osh(f2, os_ran(U32.to_nat(off), String.length(dat), Nil{}, 0, 0, String.length(dat), num, U32.to_nat(off), dat, acc))
+            case Con{+n2, Con{+o2, rest2}}:
+              # the next pair bounds this slice and joins the walk again
+              osh(f2, os_ran(U32.to_nat(off), String.length(dat), Con{n2, Con{o2, rest2}}, n2, o2, U32.to_nat(o2), num, U32.to_nat(off), dat, acc))
+            case tail3:
+              DErr{"the object stream header shall contain N pairs of integers (7.5.7)"}
+        case SIns{rest, n2, o2, oend, num, +offn, +dat, acc}:
+          osh(f2, os_leg(os_slice_parse(os_take(Nat.sub(oend, offn), Lx.sdrop(offn, dat))), rest, num, dat, acc))
+
+def osh_start(+dat: String, +first: U32, n: Nat) -> OSDc:
+  match n:
+    case 0n:
+      # zero objects: nothing stored (Table 16: N counts the objects)
+      DOK{Nil{}}
+    case 1n+p:
+      # fuel: First bytes of scan, per-pair walks (len*len bounds N*len,
+      # since a pair is at least two bytes), plus headroom
+      f0 : Nat = Nat.add(U32.to_nat(first), Nat.add(Nat.mul(String.length(dat), String.length(dat)), 16n))
+      osh(f0, SGo{dat, dat, U32.to_nat(first), n, 0n, 0, 0n, Nil{}})
+
+# ---- a value must be a direct non-negative integer (Table 16: N and
+# First are integers). Indirect values stay unresolved in v0 (7.3.10).
+
+def os_int(o: P.Obj) -> OSInt:
+  match o:
+    case P.ONum{neg, whole, fnum, fden}:
+      match neg:
+        case True{}:
+          ISbad{}
+        case False{}:
+          match fnum:
+            case 0n:
+              ISok{whole}
+            case 1n+p:
+              ISbad{}
+    case val2:
+      ISbad{}
+
+# ---- the object stream dictionary walk (Table 16, 7.5.7): the Type, N
+# and First entries settle with their values; the Filter entry only sets
+# its flag (Table 5). Extends is ignored in v0.
+
+def xodw(els: List<&2, P.PEntry>, t: Bool, tv: P.Obj, n: Bool, nv: P.Obj, f: Bool, fv: P.Obj, l: Bool, v: P.Obj, tk: Bool, nk: Bool, fk: Bool, lk: Bool) -> OSDR:
+  match els:
+    case Nil{}:
+      match tk:
+        case True{}:
+          OSDok{True{}, v, n, nv, f, fv, l}
+        case False{}:
+          match nk:
+            case True{}:
+              OSDok{t, tv, True{}, v, f, fv, l}
+            case False{}:
+              match fk:
+                case True{}:
+                  OSDok{t, tv, n, nv, True{}, v, l}
+                case False{}:
+                  match lk:
+                    case True{}:
+                      OSDok{t, tv, n, nv, f, fv, True{}}
+                    case False{}:
+                      OSDok{t, tv, n, nv, f, fv, l}
+    case Con{P.PE{+k, +v2}, rest}:
+      # the pending pair settles; the new pair becomes pending (7.3.7)
+      match tk:
+        case True{}:
+          xodw(rest, True{}, v, n, nv, f, fv, l, v2, String.eq(k, "Type"), String.eq(k, "N"), String.eq(k, "First"), String.eq(k, "Filter"))
+        case False{}:
+          match nk:
+            case True{}:
+              xodw(rest, t, tv, True{}, v, f, fv, l, v2, String.eq(k, "Type"), String.eq(k, "N"), String.eq(k, "First"), String.eq(k, "Filter"))
+            case False{}:
+              match fk:
+                case True{}:
+                  xodw(rest, t, tv, n, nv, True{}, v, l, v2, String.eq(k, "Type"), String.eq(k, "N"), String.eq(k, "First"), String.eq(k, "Filter"))
+                case False{}:
+                  match lk:
+                    case True{}:
+                      xodw(rest, t, tv, n, nv, f, fv, True{}, v2, String.eq(k, "Type"), String.eq(k, "N"), String.eq(k, "First"), String.eq(k, "Filter"))
+                    case False{}:
+                      xodw(rest, t, tv, n, nv, f, fv, l, v2, String.eq(k, "Type"), String.eq(k, "N"), String.eq(k, "First"), String.eq(k, "Filter"))
+
+# ---- Table 16 validation: the computed results ride as parameters down
+# the chain; the scan runs at the bottom. DOK carries the stored objects,
+# DErr the diagnostic.
+
+def os_fb(bad: Bool, first: U32, n: U32, dat: String) -> OSDc:
+  match bad:
+    case True{}:
+      DErr{"the First entry shall locate the first object within the stream (Table 16, 7.5.7)"}
+    case False{}:
+      osh_start(dat, first, U32.to_nat(n))
+
+def os_fil(+first: U32, n: U32, fil: Bool, +dat: String) -> OSDc:
+  match fil:
+    case True{}:
+      DErr{"object streams stored with a Filter are not supported in v0 (Table 5 Filter, 7.4)"}
+    case False{}:
+      os_fb(Nat.is_lt(String.length(dat), U32.to_nat(first)), first, n, dat)
+
+def os_fc(res: OSInt, n: U32, fil: Bool, dat: String) -> OSDc:
+  match res:
+    case ISbad{}:
+      DErr{"First shall be a non-negative integer (Table 16, 7.5.7)"}
+    case ISok{first}:
+      os_fil(first, n, fil, dat)
+
+def os_f(fv: P.Obj, f: Bool, n: U32, fil: Bool, dat: String) -> OSDc:
+  match f:
+    case True{}:
+      os_fc(os_int(fv), n, fil, dat)
+    case False{}:
+      DErr{"the object stream dictionary shall have a First entry (Table 16, 7.5.7)"}
+
+def os_nc(res: OSInt, f: Bool, fv: P.Obj, fil: Bool, dat: String) -> OSDc:
+  match res:
+    case ISbad{}:
+      DErr{"N shall be a non-negative integer (Table 16, 7.5.7)"}
+    case ISok{n}:
+      os_f(fv, f, n, fil, dat)
+
+def os_n(nv: P.Obj, n: Bool, f: Bool, fv: P.Obj, fil: Bool, dat: String) -> OSDc:
+  match n:
+    case True{}:
+      os_nc(os_int(nv), f, fv, fil, dat)
+    case False{}:
+      DErr{"the object stream dictionary shall have an N entry (Table 16, 7.5.7)"}
+
+def os_vc(ok: Bool, n: Bool, nv: P.Obj, f: Bool, fv: P.Obj, fil: Bool, dat: String) -> OSDc:
+  match ok:
+    case True{}:
+      os_n(nv, n, f, fv, fil, dat)
+    case False{}:
+      DErr{"the object stream dictionary shall have a Type entry with the value ObjStm (Table 16, 7.5.7)"}
+
+def os_vt(tv: P.Obj, n: Bool, nv: P.Obj, f: Bool, fv: P.Obj, fil: Bool, dat: String) -> OSDc:
+  match tv:
+    case P.OName{val}:
+      os_vc(String.eq(val, "ObjStm"), n, nv, f, fv, fil, dat)
+    case val2:
+      DErr{"the object stream dictionary shall have a Type entry with the value ObjStm (Table 16, 7.5.7)"}
+
+def os_val(r: OSDR, dat: String) -> OSDc:
+  match r:
+    case OSDok{t, tv, n, nv, f, fv, fil}:
+      match t:
+        case True{}:
+          os_vt(tv, n, nv, f, fv, fil, dat)
+        case False{}:
+          DErr{"the object stream dictionary shall have a Type entry with the value ObjStm (Table 16, 7.5.7)"}
+
+# ---- the object stream decode (7.5.7): the stream object's generation
+# shall be zero; the dictionary walk collects Table 16, then the scan
+# and slicing run.
+
+def os_gen(g: Nat, +o: P.Obj) -> OSDc:
+  match g:
+    case 0n:
+      match o:
+        case P.OStream{d, dat}:
+          match d:
+            case P.ODict{els}:
+              os_val(xodw(els, False{}, P.ONil{}, False{}, P.ONil{}, False{}, P.ONil{}, False{}, P.ONil{}, False{}, False{}, False{}, False{}), dat)
+            case val2:
+              DErr{"the object stream dictionary shall be a direct dictionary (7.3.8.1)"}
+        case val3:
+          DErr{"an object stream shall be a stream object (7.5.7)"}
+    case 1n+gg:
+      DErr{"the generation number of an object stream shall be zero (7.5.7)"}
+
+def os_decode(bo: P.BO) -> OSDc:
+  match bo:
+    case P.BO{num, gen, o}:
+      os_gen(U32.to_nat(gen), o)
+
+def bof_eq(f: Nat, a: Nat, b: Nat, +num: U32, robj: List<&2, P.BO>, bo: P.BO) -> OBF:
+  match f:
+    case 0n:
+      OBfNo{}
+    case 1n+f2:
+      match a:
+        case 0n:
+          match b:
+            case 0n:
+              OBf{bo}
+            case 1n+m:
+              # not this one: the scan continues into the remainder
+              match robj:
+                case Nil{}:
+                  OBfNo{}
+                case Con{P.BO{+n2, +g2, +o2}, rest2}:
+                  bof_eq(f2, U32.to_nat(n2), U32.to_nat(num), num, rest2, P.BO{n2, g2, o2})
+        case 1n+p:
+          match b:
+            case 0n:
+              match robj:
+                case Nil{}:
+                  OBfNo{}
+                case Con{P.BO{+n2, +g2, +o2}, rest2}:
+                  bof_eq(f2, U32.to_nat(n2), U32.to_nat(num), num, rest2, P.BO{n2, g2, o2})
+            case 1n+q:
+              bof_eq(f2, p, q, num, robj, bo)
+
+# ---- object lookup by number (7.3.10: the object number identifies the
+# indirect object). The equality test walks both copies down together,
+# so no computed Bool is ever matched.
+
+def bof_find(+num: U32, +robj: List<&2, P.BO>) -> OBF:
+  match robj:
+    case Nil{}:
+      OBfNo{}
+    case Con{P.BO{n, g, o}, rest}:
+      bof_eq(Nat.add(Nat.mul(List.length(&2, P.BO, robj), 40n), 16n), U32.to_nat(n), U32.to_nat(num), num, rest, P.BO{n, g, o})
+
+# ---- memo lookup (7.5.7: a stream decodes once); MHit carries the
+# stream's stored objects for the position check.
+
+def os_meq(f: Nat, a: Nat, b: Nat, +stmn: U32, memos: List<&2, OSP>, objs: List<&2, P.BO>) -> MRes:
+  match f:
+    case 0n:
+      MMiss{}
+    case 1n+f2:
+      match a:
+        case 0n:
+          match b:
+            case 0n:
+              MHit{objs}
+            case 1n+m:
+              match memos:
+                case Nil{}:
+                  MMiss{}
+                case Con{OSP{+stm2, +objs2}, rest2}:
+                  os_meq(f2, U32.to_nat(stm2), U32.to_nat(stmn), stmn, rest2, objs2)
+        case 1n+p:
+          match b:
+            case 0n:
+              match memos:
+                case Nil{}:
+                  MMiss{}
+                case Con{OSP{+stm2, +objs2}, rest2}:
+                  os_meq(f2, U32.to_nat(stm2), U32.to_nat(stmn), stmn, rest2, objs2)
+            case 1n+q:
+              os_meq(f2, p, q, stmn, memos, objs)
+
+def os_mhit(+stmn: U32, +memos: List<&2, OSP>) -> MRes:
+  match memos:
+    case Nil{}:
+      MMiss{}
+    case Con{OSP{stm, objs}, rest}:
+      os_meq(Nat.add(Nat.mul(List.length(&2, OSP, memos), 40n), 16n), U32.to_nat(stm), U32.to_nat(stmn), stmn, rest, objs)
+
+# ---- the type-2 row walk (7.5.7): each entry names its object stream; a
+# stream decodes once and its stored objects join the memo table. Helpers
+# ride in argument position; only this driver recurses.
+
+def xos(f: Nat, st: XSt) -> OSRes:
+  match f:
+    case 0n:
+      OSErr{"out of object stream pass fuel (internal)"}
+    case 1n+f2:
+      match st:
+        case SXr{+rows, +robj, +acc}:
+          match rows:
+            case Nil{}:
+              OSOK{acc}
+            case Con{XE{num, gen, in_use, offset}, rest}:
+              # classic entries keep their byte offsets (Table 15, 7.5.4)
+              xos(f2, SXr{rest, robj, acc})
+            case Con{XEC{num, stmn, idxn}, rest}:
+              xos(f2, SXm{os_mhit(stmn, acc), stmn, idxn, rest, robj, acc})
+        case SXm{mres, +stmn, idxn, rows, +robj, +acc}:
+          match mres:
+            case MHit{objs}:
+              xos(f2, SXi{Bool.not(Nat.is_lt(U32.to_nat(idxn), List.length(&2, P.BO, objs))), rows, robj, acc})
+            case MMiss{}:
+              xos(f2, SXf{bof_find(stmn, robj), stmn, idxn, rows, robj, acc})
+        case SXf{fr, stmn, idxn, rows, robj, acc}:
+          match fr:
+            case OBfNo{}:
+              OSErr{"a type-2 entry names an object stream that is not present (Table 18, 7.5.8.3)"}
+            case OBf{bo}:
+              xos(f2, SXo{os_decode(bo), stmn, idxn, rows, robj, acc})
+        case SXo{res, stmn, idxn, rows, robj, acc}:
+          match res:
+            case DErr{why}:
+              OSErr{why}
+            case DOK{+objs}:
+              xos(f2, SXb{Bool.not(Nat.is_lt(U32.to_nat(idxn), List.length(&2, P.BO, objs))), stmn, objs, rows, robj, acc})
+        case SXb{bad, stmn, objs, rows, robj, acc}:
+          match bad:
+            case True{}:
+              OSErr{"the position of a type-2 entry shall fall within the object stream's stored objects (Table 18, 7.5.8.3)"}
+            case False{}:
+              xos(f2, SXr{rows, robj, Con{OSP{stmn, objs}, acc}})
+        case SXi{bad, rows, robj, acc}:
+          match bad:
+            case True{}:
+              OSErr{"the position of a type-2 entry shall fall within the object stream's stored objects (Table 18, 7.5.8.3)"}
+            case False{}:
+              xos(f2, SXr{rows, robj, acc})
+
+# ---- the merge wrapper: every memo's stored objects join the file's
+# object table; the stream dictionary remains the trailer (7.5.8.1).
+
+def os_mcat(memos: List<&2, OSP>, +acc: List<&2, P.BO>) -> List<&2, P.BO>:
+  match memos:
+    case Nil{}:
+      acc
+    case Con{OSP{stm, objs}, rest}:
+      os_mcat(rest, List.append(&2, P.BO, acc, objs))
+
+def xs_merge2(robj: List<&2, P.BO>, rows: List<&2, XE>, d: P.Obj, sx: U32, acc: List<&2, OSP>) -> FullRes:
+  FullRes{List.append(&2, P.BO, robj, os_mcat(acc, Nil{})), rows, d, sx}
+
+def xs_merge3(robj: List<&2, P.BO>, rows: List<&2, XE>, d: P.Obj, sx: U32, res: OSRes) -> FullRes:
+  match res:
+    case OSErr{why}:
+      FullErr{why}
+    case OSOK{acc}:
+      xs_merge2(robj, rows, d, sx, acc)
+
+def xs_merge(+robj: List<&2, P.BO>, +rows: List<&2, XE>, d: P.Obj, sx: U32) -> FullRes:
+  f0 : Nat = Nat.add(Nat.mul(Nat.add(llen_bo(robj), 16n), 2n), 16n)
+  xs_merge3(robj, rows, d, sx, xos(f0, SXr{rows, robj, Nil{}}))
 def xs_runcase(robj: List<&2, P.BO>, d: P.Obj, dat: String, sx: U32, rr: XRRes) -> FullRes:
   match rr:
     case XRErr{why}:
       FullErr{why}
     case XROk{rows}:
-      # the stream dictionary doubles as the trailer (7.5.8.1)
-      FullRes{robj, rows, d, sx}
+      # the object-stream pass merges stored objects first (7.5.7); the
+      # stream dictionary doubles as the trailer (7.5.8.1)
+      xs_merge(robj, rows, d, sx)
 
 
 def xs_pairs(robj: List<&2, P.BO>, d: P.Obj, +dat: String, sx: U32, a: U32, b: U32, c: U32, pr: IRRes) -> FullRes:

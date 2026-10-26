@@ -66,3 +66,22 @@ def Laws.xs_decode_w1410():
 
 def Laws.xs_audit_exact():
   {==}
+
+def Laws.os_take_two():
+  {==}
+
+def Laws.os_drop_header8():
+  {==}
+
+def Laws.osh_fuel_gate():
+  {==}
+
+def Laws.os_gen_gen_zero():
+  {==}
+
+def Laws.osh_ord_bad():
+  {==}
+
+def Laws.osh_start_two_pairs():
+  {==}
+

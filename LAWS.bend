@@ -96,3 +96,32 @@ law xs_decode_w1410:
 
 law xs_audit_exact:
   {X.audit(Con{P.BO{4, 0, P.OStream{P.ODict{Con{P.PE{"Length", P.ONum{False{}, 3, 0n, 1n}}, Nil{}}}, SCon{Char.from_u32(49), SCon{Char.from_u32(50), SCon{Char.from_u32(51), SNil{}}}}}}, Nil{}}) == X.AudOk{} : X.AudRes}
+# Golden laws for the object-stream milestone (7.5.7). X = xref.bend.
+# String literals norm here; lex-level byte escapes are not needed for
+# these laws (the acceptance data carries no escapes).
+
+# os_take keeps the first n characters of a slice region (7.5.7: an object
+# spans from its header offset to the next offset); sdrop seeks past the
+# N-pairs header counted by the First entry (Table 16, 7.5.7); the fuel
+# gate errs; pair offsets are byte offsets in the raw stream data and
+# shall be in increasing order (7.5.7); the object stream's generation
+# shall be zero (7.5.7); the v0 acceptance case header "3 8 4 23" with
+# First 8 decodes the stored page dict and the number 42 (Table 16).
+
+law os_take_two:
+  {X.os_take(2n, "42!") == "42" : String}
+
+law os_drop_header8:
+  {Pdf.sdrop(8n, "3 8 4 23<</Type /Page>>42") == "<</Type /Page>>42" : String}
+
+law osh_fuel_gate:
+  {X.osh(0n, X.SBad{"x"}) == X.DErr{"out of object stream header fuel (internal)"} : X.OSDc}
+
+law os_gen_gen_zero:
+  {X.os_decode(P.BO{1, 1, P.OStream{P.ODict{Nil{}}, SNil{}}}) == X.DErr{"the generation number of an object stream shall be zero (7.5.7)"} : X.OSDc}
+
+law osh_ord_bad:
+  {X.osh(8n, X.SOrd{Nil{}, Con{9, Con{5, Nil{}}}, 9, False{}, SNil{}, Nil{}}) == X.DErr{"the offsets in an object stream shall be in increasing order (7.5.7)"} : X.OSDc}
+
+law osh_start_two_pairs:
+  {X.osh_start("3 8 4 23<</Type /Page>>42", 8, 2n) == X.DOK{Con{P.BO{3, 0, P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Nil{}}}}, Con{P.BO{4, 0, P.ONum{False{}, 42, 0n, 1n}}, Nil{}}}} : X.OSDc}
