@@ -29,10 +29,13 @@ type FullRes is Data:
   FullErr{why: String}
 
 
-# ---- wrapper for (entries, remaining tokens) — avoids pair-matching computed values
+# ---- wrapper for (entries, remaining tokens) — avoids pair-matching computed values.
+# Carries an error when a real appears where an integer is expected
+# (offset / generation, 7.5.4 + 7.3.3).
 
-type XEList is Data:
-  XEList{entries: List<&2, XE>, rem: List<&2, Lx.Tok>}
+type XEntryRes is Data:
+  XEOk{entries: List<&2, XE>, rem: List<&2, Lx.Tok>}
+  XEErr{why: String}
 
 
 # ---- xref_entry_fn: self-recursive entry parser.
@@ -40,80 +43,96 @@ type XEList is Data:
 # in_use = in_use flag for current entry (computed from f/n TWord at call site).
 # whole2 = gen, whole = offset of current entry.
 
-def xref_entry_fn(remaining: Nat, in_use: Bool, tt3: List<&2, Lx.Tok>, acc: List<&2, XE>, whole2: U32, whole: U32) -> XEList:
+def xref_entry_fn(remaining: Nat, in_use: Bool, tt3: List<&2, Lx.Tok>, acc: List<&2, XE>, whole2: U32, whole: U32) -> XEntryRes:
   match remaining:
     case 0n:
-      XEList{List.reverse(&2, XE, Con{XE{0, whole2, in_use, whole}, acc}), tt3}
+      XEOk{List.reverse(&2, XE, Con{XE{0, whole2, in_use, whole}, acc}), tt3}
     case 1n+p:
       match tt3:
         case Nil{}:
-          XEList{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+          XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
         case Con{tk, tt}:
           match tk:
-            case Lx.TNum{neg, whole3, fnum, fden}:
-              # whole3 = next offset; expect gen TNum
-              match tt:
-                case Nil{}:
-                  XEList{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
-                case Con{tk2, tt2}:
-                  match tk2:
-                    case Lx.TNum{neg2, whole4, fnum2, fden2}:
-                      # whole4 = next gen; expect f/n TWord
-                      match tt2:
-                        case Nil{}:
-                          XEList{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
-                        case Con{tk3, tt3}:
-                          match tk3:
-                            case Lx.TWord{val3}:
-                              xref_entry_fn(p, String.eq(val3, "n"), tt3, Con{XE{0, whole2, in_use, whole}, acc}, whole4, whole3)
-                            case x:
-                              XEList{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+            case Lx.TNum{neg, whole3, fnum3, fden3}:
+              match fnum3:
+                case 0n:
+                  # whole3 = next offset; expect gen TNum
+                  match tt:
+                    case Nil{}:
+                      XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                    case Con{tk2, tt2}:
+                      match tk2:
+                        case Lx.TNum{neg2, whole4, fnum2, fden2}:
+                          match fnum2:
+                            case 0n:
+                              # whole4 = next gen; expect f/n TWord
+                              match tt2:
+                                case Nil{}:
+                                  XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                                case Con{tk3, tt3}:
+                                  match tk3:
+                                    case Lx.TWord{val3}:
+                                      xref_entry_fn(p, String.eq(val3, "n"), tt3, Con{XE{0, whole2, in_use, whole}, acc}, whole4, whole3)
+                                    case x:
+                                      XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                            case 1n+p2:
+                              XEErr{"xref entry generation shall be an integer (7.5.4, 7.3.3)"}
+                        case x:
+                          XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
                     case x:
-                      XEList{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
-                case x:
-                  XEList{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                      XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                case 1n+p3:
+                  XEErr{"xref entry offset shall be an integer (7.5.4, 7.3.3)"}
             case x:
-              XEList{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+              XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
 
 
 # ---- xref_entries: read `start count` header, then delegate to xref_entry_fn
 # for the first triplet; xref_entry_fn is self-recursive for the rest.
 
-def xref_entries(remaining: Nat, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> XEList:
+def xref_entries(remaining: Nat, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> XEntryRes:
   match remaining:
     case 0n:
-      XEList{List.reverse(&2, XE, acc), toks}
+      XEOk{List.reverse(&2, XE, acc), toks}
     case 1n+p:
       match toks:
         case Nil{}:
-          XEList{acc, Nil{}}
+          XEOk{acc, Nil{}}
         case Con{tk, tt}:
           match tk:
             case Lx.TNum{neg, whole, fnum, fden}:
-              # whole is offset; expect gen TNum
-              match tt:
-                case Nil{}:
-                  XEList{acc, Nil{}}
-                case Con{tk2, tt2}:
-                  match tk2:
-                    case Lx.TNum{neg2, whole2, fnum2, fden2}:
-                      # whole2 is gen; expect f/n TWord
-                      match tt2:
-                        case Nil{}:
-                          XEList{acc, Nil{}}
-                        case Con{tk3, tt3}:
-                          match tk3:
-                            case Lx.TWord{val}:
-                              # remaining-1 entries after this one
-                              xref_entry_fn(p, String.eq(val, "n"), tt3, acc, whole2, whole)
-                            case x:
-                              XEList{acc, toks}
+              match fnum:
+                case 0n:
+                  # whole is offset; expect gen TNum
+                  match tt:
+                    case Nil{}:
+                      XEOk{acc, Nil{}}
+                    case Con{tk2, tt2}:
+                      match tk2:
+                        case Lx.TNum{neg2, whole2, fnum2, fden2}:
+                          match fnum2:
+                            case 0n:
+                              # whole2 is gen; expect f/n TWord
+                              match tt2:
+                                case Nil{}:
+                                  XEOk{acc, Nil{}}
+                                case Con{tk3, tt3}:
+                                  match tk3:
+                                    case Lx.TWord{val}:
+                                      # remaining-1 entries after this one
+                                      xref_entry_fn(p, String.eq(val, "n"), tt3, acc, whole2, whole)
+                                    case x:
+                                      XEOk{acc, toks}
+                            case 1n+p2:
+                              XEErr{"xref entry generation shall be an integer (7.5.4, 7.3.3)"}
+                        case x:
+                          XEOk{acc, toks}
                     case x:
-                      XEList{acc, toks}
-                case x:
-                  XEList{acc, toks}
+                      XEOk{acc, toks}
+                case 1n+p3:
+                  XEErr{"xref entry offset shall be an integer (7.5.4, 7.3.3)"}
             case x:
-              XEList{acc, toks}
+              XEOk{acc, toks}
 
 
 # ---- xref_parse_startxref: scan remaining tokens for `startxref` keyword.
@@ -158,16 +177,18 @@ def xref_scan(rest: List<&2, Lx.Tok>, is_sx: Bool, entries: List<&2, XE>, head: 
               xref_scan(next_rest, False{}, entries, next_head)
 
 
-# ---- xref_parse_entries_done: match computed XEList, split rem into head/rest
+# ---- xref_parse_entries_done: match computed XEntryRes, split rem into head/rest
 
-def xref_parse_entries_done(xl: XEList) -> XRes:
-  match xl:
-    case XEList{entries, rem}:
+def xref_parse_entries_done(xr: XEntryRes) -> XRes:
+  match xr:
+    case XEOk{entries, rem}:
       match rem:
         case Nil{}:
           XErr{"startxref not found in xref section (7.5.4)"}
         case Con{head, rest}:
           xref_scan(rest, False{}, entries, head)
+    case XEErr{why}:
+      XErr{why}
 
 
 # ---- xref_parse: parse full xref section from tokens (after `xref` consumed)

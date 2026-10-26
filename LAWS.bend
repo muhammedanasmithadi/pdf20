@@ -193,3 +193,14 @@ law xref_offset_int:
 
 law xref_offset_real:
   {X.xref_offset_at(Nil{}, Pdf.TNum{False{}, 5, 5n, 10n}) == X.XErr{"startxref offset shall be an integer (7.5.4, 7.3.3)"} : X.XRes}
+
+# xref-table entry offsets and generations are integers (7.5.4 Table 15, 7.3.3):
+# a real offset or generation is rejected.
+law xref_entry_offset_real:
+  {X.xref_entries(1n, Con{Pdf.TNum{False{}, 5, 5n, 10n}, Nil{}}, Nil{}) == X.XEErr{"xref entry offset shall be an integer (7.5.4, 7.3.3)"} : X.XEntryRes}
+
+law xref_entry_gen_real:
+  {X.xref_entries(1n, Con{Pdf.TNum{False{}, 5, 0n, 1n}, Con{Pdf.TNum{False{}, 0, 5n, 10n}, Nil{}}}, Nil{}) == X.XEErr{"xref entry generation shall be an integer (7.5.4, 7.3.3)"} : X.XEntryRes}
+
+law xref_entry_int_ok:
+  {X.xref_entries(1n, Con{Pdf.TNum{False{}, 5, 0n, 1n}, Con{Pdf.TNum{False{}, 0, 0n, 1n}, Con{Pdf.TWord{"n"}, Nil{}}}}, Nil{}) == X.XEOk{Con{X.XE{0, 0, True{}, 5}, Nil{}}, Nil{}} : X.XEntryRes}

@@ -132,3 +132,12 @@ def Laws.xref_offset_int():
 def Laws.xref_offset_real():
   {==}
 
+def Laws.xref_entry_offset_real():
+  {==}
+
+def Laws.xref_entry_gen_real():
+  {==}
+
+def Laws.xref_entry_int_ok():
+  {==}
+

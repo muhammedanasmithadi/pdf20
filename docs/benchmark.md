@@ -449,8 +449,8 @@ a leading, trailing, or embedded PERIOD (2Eh), e.g. `-98`, `+17`, `34.5`,
 `lex_real_lead_dot`, `lex_real_trail_dot`).
 
 ISO 7.3.3: "a real number shall not be present where an integer is
-expected." Three integer-expected positions that silently dropped the
-fraction now reject reals with clause-cited diagnostics:
+expected." Four integer-expected positions now reject reals with
+clause-cited diagnostics:
 
 - trailer `/Size` → "trailer Size shall be an integer (7.3.3)"
   (law `size_real_rejected`, proven via `R.trav` on `VSzO`)
@@ -458,10 +458,15 @@ fraction now reject reals with clause-cited diagnostics:
   (7.5.4, 7.3.3)" (laws `xref_offset_int`, `xref_offset_real`)
 - the xref subsection `start` and `count` → "xref subsection start/count
   shall be an integer (7.5.4, 7.3.3)"
+- xref-table entry `offset` and `generation` → "xref entry offset/generation
+  shall be an integer (7.5.4, 7.3.3)" (laws `xref_entry_offset_real`,
+  `xref_entry_gen_real`, `xref_entry_int_ok`, proven via `X.xref_entries`)
 
 The xref-stream path already enforced this (`xs_sz_int` / W-array check
-`fnum==0n`, Table 17, 7.5.8.3); xref-table entry offsets/generations remain
-a known gap (they flow through `XEList`, which carries no error variant).
+`fnum==0n`, Table 17, 7.5.8.3). `xref_entries`/`xref_entry_fn` were
+converted from the error-free `XEList` wrapper to the error-carrying
+`XEntryRes` (`XEOk`/`XEErr`) so real offsets/generations propagate as
+diagnostics instead of being silently truncated.
 
-36 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
+43 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
 runner battery (27 fixtures) zero regressions; validator outcomes unchanged.
