@@ -218,3 +218,6 @@ def Laws.val_page_mediabox_bad():
 
 def Laws.val_page_count_mismatch():
   {==}
+
+def Laws.val_page_badres():
+  {==}
