@@ -187,6 +187,11 @@ def xref_file(path: List<&2, U32>) -> IO(X.FullRes & U32):
     ret : X.FullRes & U32 <- xref_size_exec(sfp)
     return ret
 
+def full_report(lr: Pdf.Lex & U32, pr: P.PRes & U32, xr: X.FullRes & U32) -> String:
+  match xr:
+    case (+fr, sz):
+      ((lex_rpt(lr) ++ " | " ++ parse_rpt(pr)) ++ " | " ++ X.fullres_rpt(fr, sz) ++ " | DECODE " ++ X.stream_decode_report_objs(X.objs_of(fr)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
@@ -194,5 +199,6 @@ def main() -> IO(Unit):
     lex_ret : Pdf.Lex & U32 <- lex_file(str_byts(path_str))
     par_ret : P.PRes & U32 <- parse_file(str_byts(path_str))
     xref_ret : X.FullRes & U32 <- xref_file(str_byts(path_str))
-    IO.print(((lex_rpt(lex_ret) ++ " | " ++ parse_rpt(par_ret)) ++ " | " ++ xref_rpt(xref_ret)))
+    IO.print(full_report(lex_ret, par_ret, xref_ret))
+
 

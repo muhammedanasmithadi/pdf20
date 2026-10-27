@@ -5,6 +5,7 @@
 import Base
 import ./lex.bend as Lx
 import ./parser.bend as P
+import ./flate.bend as F
 
 # ---- xref entry: object number, generation, in-use/free, byte offset (Table 15)
 
@@ -2104,3 +2105,67 @@ def xfile_route(+bytes: List<&2, U32>, posl: List<&2, Nat>) -> FullRes:
 # no %%EOF at all: keep the pre-segmentation whole-file path verbatim
 def xfile_bytes(+bytes: List<&2, U32>) -> FullRes:
   xfile_route(bytes, eof_scan(llen_byts(bytes), bytes, E0{Nil{}, 0n}))
+
+# ---- stream body decode reporting (§7.8, §7.8.2)
+
+# Convert a String to a byte list (Char codes are raw byte values).
+def str_byts(s: String) -> List<&2, U32>:
+  match s:
+    case SNil{}: Nil{}
+    case SCon{h, t}: Con{Char.to_u32(h), str_byts(t)}
+
+# Walk the object list and report decoded stream lengths.
+# Returns a string like "obj=5 len=11 | obj=7 len=0 | ...".
+# Only FlateDecode streams are decoded; unsupported filters report as-is.
+def stream_decode_report(objs: List<&2, P.BO>, acc: String) -> String:
+  match objs:
+    case Nil{}: acc
+    case Con{P.BO{num, gen, o}, rest}:
+      match o:
+        case P.OStream{d, dat}:
+          match acc:
+            case SNil{}:
+              body = str_byts(dat)
+              decoded = F.decode_stream_body(d, body)
+              n = List.length(&2, U32, decoded)
+              part = (("obj=" ++ U32.show(num)) ++ (" len=" ++ Nat.show(n)))
+              stream_decode_report(rest, part)
+            case SCon{h, t}:
+              body = str_byts(dat)
+              decoded = F.decode_stream_body(d, body)
+              n = List.length(&2, U32, decoded)
+              part = (("obj=" ++ U32.show(num)) ++ (" len=" ++ Nat.show(n)))
+              stream_decode_report(rest, (SCon{h, t} ++ (" | " ++ part)))
+        case x: stream_decode_report(rest, acc)
+
+# single-argument wrapper for the runner
+def stream_decode_report_objs(objs: List<&2, P.BO>) -> String:
+  stream_decode_report(objs, "")
+
+def objs_of(fr: FullRes) -> List<&2, P.BO>:
+  match fr:
+    case FullRes{objs, xref, trailer, startxref}: objs
+    case FullErr{why}: Nil{}
+
+def fr_of_pair(p: FullRes & U32) -> FullRes:
+  match p:
+    case (fr, sz): fr
+
+def sz_of_pair(p: FullRes & U32) -> U32:
+  match p:
+    case (fr, sz): sz
+
+def fr_objs_count(objs: List<&2, P.BO>) -> Nat:
+  match objs:
+    case Nil{}: 0n
+    case Con{+h, t}: Nat.add(1n, fr_objs_count(t))
+
+def fullres_rpt(+fr: FullRes, sz: U32) -> String:
+  match fr:
+    case FullRes{objs, xref, trailer, startxref}:
+      oc = fr_objs_count(objs)
+      (("XOK entries objs=" ++ Nat.show(oc) ++ " startxref=" ++ U32.show(startxref) ++ " " ++ U32.show(sz)))
+    case FullErr{why}:
+      (("ERR " ++ why) ++ " " ++ U32.show(sz))
+
+
