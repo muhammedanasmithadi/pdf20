@@ -30,6 +30,8 @@ type VST is Data:
   VSz{sg: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
   VSzEnc{enc: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
   VSzO{sz: P.Obj, tels: List<&2, P.PEntry>, objs: List<&2, P.BO>}
+  VRes{rr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
+  VResCat{rr: Resolved, els: List<&2, P.PEntry>, objs: List<&2, P.BO>}
   VPr{pr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VPrO{rt: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VRt{rg: Resolved, objs: List<&2, P.BO>}
@@ -202,9 +204,21 @@ def trav(fuel: Nat, st: VST) -> ValRes:
         case VCtO{ct, objs}:
           match ct:
             case P.ODict{+els}:
-              trav(p, VTp{dict_get("Type", P.ODict{els}), els, objs})
+              trav(p, VResCat{dict_get("Resources", P.ODict{els}), els, objs})
             case x:
               VErr{"Root not a dictionary (7.3.7, Table 29)"}
+
+        # -- catalog Resources (Table 34): optional entry, must be a dictionary if present
+        case VResCat{rr, +els, objs}:
+          match rr:
+            case Res{r}:
+              match r:
+                case P.ODict{res_els}:
+                  trav(p, VTp{dict_get("Type", P.ODict{els}), els, objs})
+                case x:
+                  VErr{"catalog Resources not a dictionary (Table 34, 7.7.4)"}
+            case RErr{why}:
+              trav(p, VTp{dict_get("Type", P.ODict{els}), els, objs})
 
         case VTp{td, els, objs}:
           match td:
@@ -333,10 +347,22 @@ def trav(fuel: Nat, st: VST) -> ValRes:
               # a null-valued page tree kid is the omitted entry (7.3.9)
               VErr{"page tree kid missing (Table 30, 7.7.3)"}
             case P.ODict{+els}:
-              # check Parent (required on Page, Table 30)
-              trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, objs})
+              # check Resources (Table 34) before Parent (Table 30)
+              trav(p, VRes{dict_get("Resources", P.ODict{els}), els, rk, cnt, objs})
             case x:
               VErr{"page tree kid not a dictionary (7.3.7, Table 30)"}
+
+        # -- page Resources (Table 34): optional entry, must be a dictionary if present
+        case VRes{rr, +els, rk, cnt, objs}:
+          match rr:
+            case Res{r}:
+              match r:
+                case P.ODict{res_els}:
+                  trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, objs})
+                case x:
+                  VErr{"page Resources not a dictionary (Table 34, 7.7.4)"}
+            case RErr{why}:
+              trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, objs})
 
         # -- page Parent (Table 30): required entry, indirect reference
         case VPr{pr, els, rk, cnt, objs}:

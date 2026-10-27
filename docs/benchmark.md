@@ -491,6 +491,19 @@ Date: 2026-10-26. Per ISO 7.6.2, "the absence of this entry from the trailer dic
 
 Two golden laws cover encryption detection: `dict_get_encrypt_found` (Encrypt entry present in trailer) and `dict_get_encrypt_missing` (Encrypt entry absent). The `val_encrypt_rejected` law proves end-to-end rejection via `R.validate`.
 
+## Resources validation (Table 34, 7.7.4)
+
+Date: 2026-10-26. Resources is an optional entry on Page and Catalog dictionaries
+(Table 34). If present, it shall be a dictionary. The validator now checks this
+on both Page and Catalog:
+
+- Page Resources not a dictionary → "page Resources not a dictionary (Table 34, 7.7.4)"
+- Catalog Resources not a dictionary → "catalog Resources not a dictionary (Table 34, 7.7.4)"
+
+The check uses the `VRes` state in the page walker (Resources before Parent)
+and `VResCat` state in the catalog walker (Resources before Type). The `+els`
+borrowed-quantity pattern keeps `els` usage within Bend's `&2` limit.
+
 ## Indirect objects (7.3.10)
 
 Date: 2026-10-26. Per ISO 7.3.9, "an indirect object reference to a nonexistent object shall be treated the same as a null object." Previously, `resolve_obj` returned an error for missing objects; it now returns `Res{ONil{}}`, so a dangling reference propagates as null and the entry is treated as omitted. This changes the diagnostic for dangling references in required-key positions:
