@@ -12,6 +12,7 @@ import ./lex.bend as Pdf
 import ./parser.bend as P
 import ./xref.bend as X
 import ./resolve.bend as R
+import ./writer.bend as W
 
 # Offset arithmetic in clause 7.5 runs on natural numbers (xref positions,
 # lengths, gaps). `x + 0 == x` is the first lemma every offset-normalization
@@ -306,3 +307,21 @@ law val_page_badres:
 
 law val_catalog_badres:
   {R.validate(X.FullRes{Con{P.BO{1, 0, P.ODict{Con{P.PE{"Type", P.OName{"Catalog"}}, Con{P.PE{"Pages", P.OInd{2, 0}}, Con{P.PE{"Resources", P.ONum{False{}, 42, 0n, 1n}}, Nil{}}}}}}, Con{P.BO{2, 0, P.ODict{Con{P.PE{"Type", P.OName{"Pages"}}, Con{P.PE{"Kids", P.OArr{Con{P.OInd{3, 0}, Nil{}}}}, Con{P.PE{"Count", P.ONum{False{}, 1, 0n, 1n}}, Nil{}}}}}}, Con{P.BO{3, 0, P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Con{P.PE{"Parent", P.OInd{2, 0}}, Nil{}}}}}, Nil{}}}}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 4, 0n, 1n}}, Con{P.PE{"Root", P.OInd{1, 0}}, Nil{}}}}, 0}) == R.VErr{"catalog Resources not a dictionary (Table 34, 7.7.4)"} : R.ValRes}
+
+# Writer laws (w = writer.bend). ser is fuel-bounded; these use enough fuel
+# for the small inputs.
+
+law ser_int:
+  {W.ser_num(False{}, 42, 0n, 1n) == "42" : String}
+
+law ser_neg:
+  {W.ser_num(True{}, 5, 0n, 1n) == "-5" : String}
+
+law ser_name:
+  {W.ser(10n, W.SIObj{P.OName{"Page"}}) == "/Page" : String}
+
+law ser_arr:
+  {W.ser(10n, W.SIList{Con{P.ONum{False{}, 1, 0n, 1n}, Con{P.ONum{False{}, 2, 0n, 1n}, Nil{}}}}) == "1 2" : String}
+
+law ser_dict:
+  {W.ser(10n, W.SIObj{P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Nil{}}}}) == "<< /Type /Page  >>" : String}

@@ -224,3 +224,18 @@ def Laws.val_page_badres():
 
 def Laws.val_catalog_badres():
   {==}
+
+def Laws.ser_int():
+  {==}
+
+def Laws.ser_neg():
+  {==}
+
+def Laws.ser_name():
+  {==}
+
+def Laws.ser_arr():
+  {==}
+
+def Laws.ser_dict():
+  {==}
