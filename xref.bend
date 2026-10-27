@@ -2005,7 +2005,7 @@ def eof_scan(+fuel: Nat, bs: List<&2, U32>, +st: ESt) -> List<&2, Nat>:
 # merged accumulator: object set grows, the newest section carries trailer,
 # xref table and startxref (7.5.6: the newest document is current)
 type Msgt is Data:
-  MT{objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32}
+  MT{objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32, ok: Bool, err: String}
 
 type XAll is Data:
   XAS{pos: List<&2, Nat>, base: Nat, acc: Msgt, full: List<&2, U32>}
@@ -2057,8 +2057,12 @@ def dedup(+fuel: Nat, +st: DSt) -> List<&2, P.BO>:
 
 def seg_fin(a: Msgt) -> FullRes:
   match a:
-    case MT{objs, +xref, trailer, sx}:
-      FullRes{revoke_free(32768n, dedup(32768n, DD{objs}), xref), xref, trailer, sx}
+    case MT{objs, +xref, trailer, sx, ok, err}:
+      match ok:
+        case True{}:
+          FullRes{revoke_free(32768n, dedup(32768n, DD{objs}), xref), xref, trailer, sx}
+        case False{}:
+          FullErr{err}
 
 def seg_fold(+fuel: Nat, +st: XAll) -> FullRes:
   match fuel:
@@ -2075,22 +2079,27 @@ def seg_fold(+fuel: Nat, +st: XAll) -> FullRes:
         case XP{fr, p, pos, base, acc, full}:
           match fr:
             case FullErr{why}:
-              FullErr{why}
+              # per-section tolerance (7.5.6): a section that fails to parse
+              # is skipped instead of poisoning the whole update chain; the
+              # error is remembered and returned only if no section succeeds
+              match acc:
+                case MT{a_objs, a_xre, a_tr, a_sx, a_ok, a_err}:
+                  seg_fold(fp, XAS{pos, Nat.add(1n, p), MT{a_objs, a_xre, a_tr, a_sx, a_ok, why}, full})
             case FullRes{objs, +xref, +trailer, sx}:
               match acc:
-                case MT{a_objs, a_xre, a_tr, a_sx}:
+                case MT{a_objs, a_xre, a_tr, a_sx, a_ok, a_err}:
                   # free entries in this section revoke objects accumulated from
                   # earlier sections (7.5.6); the section's own definitions are
                   # appended afterwards, so a later redefinition survives
                   revoked : List<&2, P.BO> = revoke_free(32768n, a_objs, xref)
-                  seg_fold(fp, XAS{pos, Nat.add(1n, p), MT{List.append(&2, P.BO, objs, revoked), xref, trailer, sx}, full})
+                  seg_fold(fp, XAS{pos, Nat.add(1n, p), MT{List.append(&2, P.BO, objs, revoked), xref, trailer, sx, True{}, a_err}, full})
 
 def xfile_route(+bytes: List<&2, U32>, posl: List<&2, Nat>) -> FullRes:
   match posl:
     case Nil{}:
       merge_xrefstm_once(merge_prev_once(xfile(P.plx_full(Lx.lex(bytes))), bytes), bytes, 0n)
     case Con{p, more}:
-      seg_fold(32768n, XAS{posl, 0n, MT{Nil{}, Nil{}, P.ONil{}, U32.from_nat(0n)}, bytes})
+      seg_fold(32768n, XAS{posl, 0n, MT{Nil{}, Nil{}, P.ONil{}, U32.from_nat(0n), False{}, ""}, bytes})
 
 # no %%EOF at all: keep the pre-segmentation whole-file path verbatim
 def xfile_bytes(+bytes: List<&2, U32>) -> FullRes:
