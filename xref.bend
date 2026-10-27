@@ -1801,5 +1801,50 @@ def merge_prev_once(fr: FullRes, bytes: List<&2, U32>) -> FullRes:
     case FullRes{objs, xref, +trailer, sx}:
       merge_prev_impl(objs, xref, trailer, sx, bytes, prev_from_trailer(trailer))
 
+
+# ---- hybrid reference support (Table 19): merge an XRefStm stream's entries
+# pointed to by /XRefStm in the trailer.
+
+def find_xrefstm_in_entries(els: List<&2, P.PEntry>) -> P.Obj:
+  match els:
+    case Nil{}:
+      P.ONil{}
+    case Con{P.PE{SCon{'X', SCon{'R', SCon{'e', SCon{'f', SCon{'S', SCon{'t', SCon{'m', SNil{}}}}}}}}, v}, rest}:
+      v
+    case Con{P.PE{k, v}, rest}:
+      find_xrefstm_in_entries(rest)
+
+def xrefstm_from_trailer(tr: P.Obj) -> Nat:
+  match tr:
+    case P.ODict{+els}:
+      prev_num_from_obj(find_xrefstm_in_entries(els))
+    case x:
+      0n
+
+def xrefstm_entries_from_fr(fr: FullRes) -> List<&2, XE>:
+  match fr:
+    case FullErr{why}:
+      Nil{}
+    case FullRes{objs, xref, trailer, sx}:
+      xref
+
+def parse_xrefstm_entries(bs: List<&2, U32>) -> List<&2, XE>:
+  xrefstm_entries_from_fr(xfile(P.plx_full(Lx.lex(bs))))
+
+def merge_xrefstm_impl(objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32, bytes: List<&2, U32>, xo: Nat) -> FullRes:
+  match xo:
+    case 0n:
+      FullRes{objs, xref, trailer, sx}
+    case 1n+p:
+      merged : List<&2, XE> = merge_xref(parse_xrefstm_entries(bytes_drop(xo, bytes)), xref)
+      FullRes{objs, merged, trailer, sx}
+
+def merge_xrefstm_once(fr: FullRes, bytes: List<&2, U32>) -> FullRes:
+  match fr:
+    case FullErr{why}:
+      FullErr{why}
+    case FullRes{objs, xref, +trailer, sx}:
+      merge_xrefstm_impl(objs, xref, trailer, sx, bytes, xrefstm_from_trailer(trailer))
+
 def xfile_bytes(+bytes: List<&2, U32>) -> FullRes:
-  merge_prev_once(xfile(P.plx_full(Lx.lex(bytes))), bytes)
+  merge_xrefstm_once(merge_prev_once(xfile(P.plx_full(Lx.lex(bytes))), bytes), bytes)
