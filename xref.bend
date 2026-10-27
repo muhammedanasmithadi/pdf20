@@ -1705,5 +1705,101 @@ def xfile(px: P.PlxFull) -> FullRes:
           FullErr{why}
 
 
-def xfile_bytes(bytes: List<&2, U32>) -> FullRes:
-  xfile(P.plx_full(Lx.lex(bytes)))
+
+# ---- incremental update support (7.5.6): merge a previous xref section
+# pointed to by /Prev in the trailer. v0: one level, classic tables only.
+
+def bytes_drop(n: Nat, bs: List<&2, U32>) -> List<&2, U32>:
+  match n:
+    case 0n:
+      bs
+    case 1n+p:
+      match bs:
+        case Nil{}:
+          Nil{}
+        case Con{h, t}:
+          bytes_drop(p, t)
+
+def parse_prev_classic_kw(is_xref: Bool, rest: List<&2, Lx.Tok>) -> XRes:
+  match is_xref:
+    case True{}:
+      xref_parse(rest)
+    case False{}:
+      XErr{"previous section is not a classic xref table"}
+
+def parse_prev_classic_toks(toks: List<&2, Lx.Tok>) -> XRes:
+  match toks:
+    case Con{Lx.TWord{val}, rest}:
+      parse_prev_classic_kw(String.eq(val, "xref"), rest)
+    case x:
+      XErr{"previous section malformed"}
+
+def parse_prev_classic_lx(lx: Lx.Lex) -> XRes:
+  match lx:
+    case Lx.LexErr{why}:
+      XErr{why}
+    case Lx.Lexed{+toks}:
+      parse_prev_classic_toks(toks)
+
+def parse_prev_classic(bs: List<&2, U32>) -> XRes:
+  parse_prev_classic_lx(Lx.lex(bs))
+
+def find_prev_in_entries(els: List<&2, P.PEntry>) -> P.Obj:
+  match els:
+    case Nil{}:
+      P.ONil{}
+    case Con{P.PE{SCon{'P', SCon{'r', SCon{'e', SCon{'v', SNil{}}}}}, v}, rest}:
+      v
+    case Con{P.PE{k, v}, rest}:
+      find_prev_in_entries(rest)
+
+def prev_num_from_obj(o: P.Obj) -> Nat:
+  match o:
+    case P.ONum{neg, whole, fnum, fden}:
+      match neg:
+        case False{}:
+          match fnum:
+            case 0n:
+              U32.to_nat(whole)
+            case 1n+p:
+              0n
+        case True{}:
+          0n
+    case x:
+      0n
+
+def prev_from_trailer(tr: P.Obj) -> Nat:
+  match tr:
+    case P.ODict{+els}:
+      prev_num_from_obj(find_prev_in_entries(els))
+    case x:
+      0n
+
+def merge_xref(prev_xs: List<&2, XE>, main_xs: List<&2, XE>) -> List<&2, XE>:
+  List.append(&2, XE, prev_xs, main_xs)
+
+def merge_prev_xres(objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32, prev_xres: XRes) -> FullRes:
+  match prev_xres:
+    case XErr{why}:
+      # unsupported previous section (e.g. stream): skip merge
+      FullRes{objs, xref, trailer, sx}
+    case XOK{table, ptrailer, psx}:
+      merged : List<&2, XE> = merge_xref(table, xref)
+      FullRes{objs, merged, trailer, sx}
+
+def merge_prev_impl(objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32, bytes: List<&2, U32>, po: Nat) -> FullRes:
+  match po:
+    case 0n:
+      FullRes{objs, xref, trailer, sx}
+    case 1n+p:
+      merge_prev_xres(objs, xref, trailer, sx, parse_prev_classic(bytes_drop(po, bytes)))
+
+def merge_prev_once(fr: FullRes, bytes: List<&2, U32>) -> FullRes:
+  match fr:
+    case FullErr{why}:
+      FullErr{why}
+    case FullRes{objs, xref, +trailer, sx}:
+      merge_prev_impl(objs, xref, trailer, sx, bytes, prev_from_trailer(trailer))
+
+def xfile_bytes(+bytes: List<&2, U32>) -> FullRes:
+  merge_prev_once(xfile(P.plx_full(Lx.lex(bytes))), bytes)
