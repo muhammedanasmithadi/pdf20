@@ -212,3 +212,6 @@ def Laws.par_hdr_gen_frac():
 
 def Laws.val_page_no_count():
   {==}
+
+def Laws.val_page_mediabox_bad():
+  {==}
