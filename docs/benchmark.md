@@ -468,7 +468,7 @@ converted from the error-free `XEList` wrapper to the error-carrying
 `XEntryRes` (`XEOk`/`XEErr`) so real offsets/generations propagate as
 diagnostics instead of being silently truncated.
 
-65 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
+66 laws total, both `bend PROOF.bend` and `bend PROOF.bend --verdict` green;
 runner battery (27 fixtures) zero regressions; validator outcomes unchanged.
 
 
@@ -490,6 +490,19 @@ Two golden laws: `val_one_page` (updated to include Parent on page 3) and
 Date: 2026-10-26. Per ISO 7.6.2, "the absence of this entry from the trailer dictionary means that a PDF processor shall consider the document to be not encrypted." Conversely, an /Encrypt entry in the trailer means the document is encrypted. v0 does not implement decryption, so encrypted documents are rejected with "document is encrypted (7.6); encryption not supported in v0".
 
 Two golden laws cover encryption detection: `dict_get_encrypt_found` (Encrypt entry present in trailer) and `dict_get_encrypt_missing` (Encrypt entry absent). The `val_encrypt_rejected` law proves end-to-end rejection via `R.validate`.
+
+## Page tree Count validation (Table 30, 7.7.3)
+
+Date: 2026-10-26. `Count` is a required entry on `/Pages` nodes (Table 30) that
+shall be a non-negative integer. The validator now checks this:
+
+- `VCnt` state validates Count via `dict_get("Count", ...)` with `Res`/`RErr` arms
+- `vcnt_check` helper validates Count is a non-negative integer (fnum==0n, neg==False)
+- Null-valued or missing Count → "page tree root missing Count (Table 30, 7.7.3)"
+- Fractional Count → "page tree root Count shall be an integer (7.3.3, Table 30)"
+- Negative Count → "page tree root Count shall be a non-negative integer (7.3.3, Table 30)"
+
+One golden law: `val_page_no_count` (page tree without Count → diagnostic).
 
 ## Resources validation (Table 34, 7.7.4)
 

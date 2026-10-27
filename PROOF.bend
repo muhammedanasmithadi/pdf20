@@ -210,3 +210,5 @@ def Laws.par_hdr_gen_neg():
 def Laws.par_hdr_gen_frac():
   {==}
 
+def Laws.val_page_no_count():
+  {==}

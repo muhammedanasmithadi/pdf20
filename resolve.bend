@@ -32,6 +32,7 @@ type VST is Data:
   VSzO{sz: P.Obj, tels: List<&2, P.PEntry>, objs: List<&2, P.BO>}
   VRes{rr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VResCat{rr: Resolved, els: List<&2, P.PEntry>, objs: List<&2, P.BO>}
+  VCnt{cr: Resolved, dict_obj: P.Obj, objs: List<&2, P.BO>}
   VPr{pr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VPrO{rt: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VRt{rg: Resolved, objs: List<&2, P.BO>}
@@ -297,12 +298,35 @@ def trav(fuel: Nat, st: VST) -> ValRes:
             case x:
               VErr{"page tree root Type not a name (7.3.5, Table 30)"}
 
-        case VNI{ip, els, objs}:
+        case VNI{ip, +els, objs}:
           match ip:
             case True{}:
-              trav(p, VKg{dict_get("Kids", P.ODict{els}), objs})
+              trav(p, VCnt{dict_get("Count", P.ODict{els}), P.ODict{els}, objs})
             case False{}:
               VErr{"page tree root Type is not /Pages (Table 30, 7.7.3)"}
+
+        # -- Count (Table 30): required non-negative integer
+        case VCnt{cr, dict_obj, objs}:
+          match cr:
+            case Res{ct}:
+              match ct:
+                case P.ONum{neg, whole, fnum, fden}:
+                  match neg:
+                    case False{}:
+                      match fnum:
+                        case 0n:
+                          trav(p, VKg{dict_get("Kids", dict_obj), objs})
+                        case 1n+p:
+                          VErr{"page tree root Count shall be an integer (7.3.3, Table 30)"}
+                    case True{}:
+                      VErr{"page tree root Count shall be a non-negative integer (7.3.3, Table 30)"}
+                case P.ONil{}:
+                  # a null-valued entry is the omitted entry (7.3.9)
+                  VErr{"page tree root missing Count (Table 30, 7.7.3)"}
+                case x:
+                  VErr{"page tree root Count not a number (7.3.3, Table 30)"}
+            case RErr{why}:
+              VErr{"page tree root missing Count (Table 30, 7.7.3)"}
 
         # -- Kids array (Table 30)
         case VKg{kr, objs}:

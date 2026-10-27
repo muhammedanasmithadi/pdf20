@@ -290,3 +290,7 @@ law par_hdr_gen_neg:
 law par_hdr_gen_frac:
   {P.pfile(Con{49, Con{32, Con{48, Con{46, Con{53, Con{32, Con{111, Con{98, Con{106, Con{32, Con{52, Con{50, Con{32, Con{101, Con{110, Con{100, Con{111, Con{98, Con{106, Nil{}}}}}}}}}}}}}}}}}}}}) == P.PErr{"generation number shall be a non-negative integer (7.3.10)"} : P.PRes}
 
+# page tree without Count cites Table 30/7.7.3
+
+law val_page_no_count:
+  {R.validate(X.FullRes{Con{P.BO{1, 0, P.ODict{Con{P.PE{"Type", P.OName{"Catalog"}}, Con{P.PE{"Pages", P.OInd{2, 0}}, Nil{}}}}}, Con{P.BO{2, 0, P.ODict{Con{P.PE{"Type", P.OName{"Pages"}}, Con{P.PE{"Kids", P.OArr{Con{P.OInd{3, 0}, Nil{}}}}, Nil{}}}}}, Con{P.BO{3, 0, P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Con{P.PE{"Parent", P.OInd{2, 0}}, Nil{}}}}}, Nil{}}}}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 4, 0n, 1n}}, Con{P.PE{"Root", P.OInd{1, 0}}, Nil{}}}}, 0}) == R.VErr{"page tree root missing Count (Table 30, 7.7.3)"} : R.ValRes}
