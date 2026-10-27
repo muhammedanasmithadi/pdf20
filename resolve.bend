@@ -60,6 +60,39 @@ type VST is Data:
   VKI{ip: Bool, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
   VFin{eq: Bool, cnt: U32}
 
+# ---- nested page-tree (PGST) state machine types
+
+type PGFrame is Data:
+  PGF{rem: List<&2, P.Obj>, objs: List<&2, P.BO>, node_num: U32, node_gen: U32, acc: U32, expected: U32}
+
+type PGST is Data:
+  PGNr{num: U32, gen: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGNrR{rr: Resolved, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGType{td: Resolved, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGTypeO{tp: P.Obj, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGIsPages{ip: Bool, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGParentGate{is_root: Bool, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGParent{pr: Resolved, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGParentO{rt: P.Obj, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGCount{cr: Resolved, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGKids{kr: Resolved, cnt_expected: U32, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGKidsO{ko: P.Obj, cnt_expected: U32, els: List<&2, P.PEntry>, objs: List<&2, P.BO>, stack: List<&2, PGFrame>, is_root: Bool}
+  PGKidsLoop{arr: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGKidRes{kr: Resolved, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGKidO{ob: P.Obj, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGKidType{td: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGKidTypeO{tp: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGKidTypeD{is_pages: Bool, is_page: Bool, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGKidIsPages{ip: Bool, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGLeafRes{rr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGLeafParent{pr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGLeafParentO{rt: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGLeafMb{mr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGLeafType{td: Resolved, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGLeafTypeO{tp: P.Obj, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGLeafIsPage{ip: Bool, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>, stack: List<&2, PGFrame>}
+  PGTerm{eq: Bool, cnt: U32, stack: List<&2, PGFrame>}
+
 # ---- U32_eq: Bool comparison wrapper for U32 (avoids computed scrutinee)
 
 def U32_eq(a: U32, b: U32) -> Bool:
@@ -132,6 +165,255 @@ def llen(list: List<&2, P.BO>) -> Nat:
       0n
     case Con{head, rest}:
       (1n + llen(rest) : Nat)
+
+# ---- pgval: nested page-tree validator (stack-based).
+
+def pgval(fuel: Nat, st: PGST) -> ValRes:
+  match fuel:
+    case 0n:
+      VErr{"out of validation fuel"}
+    case 1n+p:
+      match st:
+
+        case PGNr{num, gen, +objs, stack, is_root}:
+          pgval(p, PGNrR{resolve_obj(objs, num, gen, False{}, False{}, P.ONil{}), objs, stack, is_root})
+
+        case PGNrR{rr, objs, stack, is_root}:
+          match rr:
+            case Res{nd}:
+              match nd:
+                case P.ONil{}:
+                  match is_root:
+                    case True{}:
+                      VErr{"catalog missing Pages (Table 29, 7.7.2)"}
+                    case False{}:
+                      VErr{"page tree kid missing (Table 30, 7.7.3)"}
+                case P.ODict{+els}:
+                  pgval(p, PGType{dict_get("Type", P.ODict{els}), els, objs, stack, is_root})
+                case x:
+                  match is_root:
+                    case True{}:
+                      VErr{"page tree root not a dictionary (7.3.7, Table 30)"}
+                    case False{}:
+                      VErr{"page tree node not a dictionary (7.3.7, Table 30)"}
+            case RErr{why}:
+              VErr{why}
+
+        case PGType{td, els, objs, stack, is_root}:
+          match td:
+            case Res{tp}:
+              pgval(p, PGTypeO{tp, els, objs, stack, is_root})
+            case RErr{why}:
+              VErr{"page tree root missing Type (Table 30, 7.7.3)"}
+
+        case PGTypeO{tp, els, objs, stack, is_root}:
+          match tp:
+            case P.OName{val}:
+              pgval(p, PGIsPages{String.eq(val, "Pages"), els, objs, stack, is_root})
+            case P.ONil{}:
+              VErr{"page tree root missing Type (Table 30, 7.7.3)"}
+            case x:
+              VErr{"page tree root Type not a name (7.3.5, Table 30)"}
+
+        case PGIsPages{ip, els, objs, stack, is_root}:
+          match ip:
+            case True{}:
+              pgval(p, PGParentGate{is_root, els, objs, stack})
+            case False{}:
+              VErr{"page tree root Type is not /Pages (Table 30, 7.7.3)"}
+
+        case PGParentGate{is_root, +els, objs, stack}:
+          match is_root:
+            case True{}:
+              pgval(p, PGCount{dict_get("Count", P.ODict{els}), els, objs, stack, is_root})
+            case False{}:
+              pgval(p, PGParent{dict_get("Parent", P.ODict{els}), els, objs, stack, is_root})
+
+        case PGParent{pr, els, objs, stack, is_root}:
+          match pr:
+            case Res{rt}:
+              pgval(p, PGParentO{rt, els, objs, stack, is_root})
+            case RErr{why}:
+              VErr{"page tree root missing Parent (Table 30, 7.7.3)"}
+
+        case PGParentO{rt, +els, objs, stack, is_root}:
+          match rt:
+            case P.OInd{num, gen}:
+              pgval(p, PGCount{dict_get("Count", P.ODict{els}), els, objs, stack, is_root})
+            case P.ONil{}:
+              VErr{"page tree root missing Parent (Table 30, 7.7.3)"}
+            case x:
+              VErr{"page tree root Parent not an indirect reference (7.3.10, Table 30)"}
+
+        case PGCount{cr, +els, objs, stack, is_root}:
+          match cr:
+            case Res{ct}:
+              match ct:
+                case P.ONum{neg, whole, fnum, fden}:
+                  match neg:
+                    case False{}:
+                      match fnum:
+                        case 0n:
+                          pgval(p, PGKids{dict_get("Kids", P.ODict{els}), whole, els, objs, stack, is_root})
+                        case 1n+q:
+                          VErr{"page tree root Count shall be an integer (7.3.3, Table 30)"}
+                    case True{}:
+                      VErr{"page tree root Count shall be a non-negative integer (7.3.3, Table 30)"}
+                case P.ONil{}:
+                  VErr{"page tree root missing Count (Table 30, 7.7.3)"}
+                case x:
+                  VErr{"page tree root Count not a number (7.3.3, Table 30)"}
+            case RErr{why}:
+              VErr{"page tree root missing Count (Table 30, 7.7.3)"}
+
+        case PGKids{kr, cnt_expected, els, objs, stack, is_root}:
+          match kr:
+            case Res{ko}:
+              pgval(p, PGKidsO{ko, cnt_expected, els, objs, stack, is_root})
+            case RErr{why}:
+              VErr{"page tree root missing Kids (Table 30, 7.7.3)"}
+
+        case PGKidsO{ko, cnt_expected, els, objs, stack, is_root}:
+          match ko:
+            case P.OArr{arr}:
+              pgval(p, PGKidsLoop{arr, 0, cnt_expected, objs, stack})
+            case P.ONil{}:
+              VErr{"page tree root missing Kids (Table 30, 7.7.3)"}
+            case x:
+              VErr{"page tree root Kids not an array (7.3.6, Table 30)"}
+
+        case PGKidsLoop{arr, +cnt, cnt_expected, +objs, stack}:
+          match arr:
+            case Nil{}:
+              pgval(p, PGTerm{U32_eq(cnt, cnt_expected), cnt, stack})
+            case Con{kid, rk}:
+              match kid:
+                case P.OInd{knum, kgen}:
+                  pgval(p, PGKidRes{resolve_obj(objs, knum, kgen, False{}, False{}, P.ONil{}), rk, cnt, cnt_expected, objs, stack})
+                case x:
+                  VErr{"page tree kid not an indirect reference (7.3.10, Table 30)"}
+
+        case PGKidRes{kr, rk, cnt, cnt_expected, objs, stack}:
+          match kr:
+            case Res{ob}:
+              pgval(p, PGKidO{ob, rk, cnt, cnt_expected, objs, stack})
+            case RErr{why}:
+              VErr{why}
+
+        case PGKidO{ob, rk, cnt, cnt_expected, objs, stack}:
+          match ob:
+            case P.ONil{}:
+              VErr{"page tree kid missing (Table 30, 7.7.3)"}
+            case P.ODict{+els}:
+              pgval(p, PGKidType{dict_get("Type", P.ODict{els}), els, rk, cnt, cnt_expected, objs, stack})
+            case x:
+              VErr{"page tree kid not a dictionary (7.3.7, Table 30)"}
+
+        case PGKidType{td, els, rk, cnt, cnt_expected, objs, stack}:
+          match td:
+            case Res{tp}:
+              pgval(p, PGKidTypeO{tp, els, rk, cnt, cnt_expected, objs, stack})
+            case RErr{why}:
+              VErr{"page tree root missing Type (Table 30, 7.7.3)"}
+
+        case PGKidTypeO{tp, +els, rk, cnt, cnt_expected, objs, stack}:
+          match tp:
+            case P.OName{+val}:
+              pgval(p, PGKidTypeD{String.eq(val, "Pages"), String.eq(val, "Page"), els, rk, cnt, cnt_expected, objs, stack})
+            case P.ONil{}:
+              VErr{"page tree root missing Type (Table 30, 7.7.3)"}
+            case x:
+              VErr{"page tree root Type not a name (7.3.5, Table 30)"}
+
+        case PGKidTypeD{is_pages, is_page, +els, rk, cnt, cnt_expected, +objs, stack}:
+          match is_pages:
+            case True{}:
+              pgval(p, PGNrR{Res{P.ODict{els}}, objs, Con{PGF{rk, objs, 0, 0, cnt, cnt_expected}, stack}, False{}})
+            case False{}:
+              match is_page:
+                case True{}:
+                  pgval(p, PGLeafRes{dict_get("Resources", P.ODict{els}), els, rk, cnt, cnt_expected, objs, stack})
+                case False{}:
+                  VErr{"page tree kid Type is not /Page (Table 30, 7.7.3)"}
+
+        case PGLeafRes{rr, +els, rk, cnt, cnt_expected, objs, stack}:
+          match rr:
+            case Res{r}:
+              match r:
+                case P.ODict{res_els}:
+                  pgval(p, PGLeafParent{dict_get("Parent", P.ODict{els}), els, rk, cnt, cnt_expected, objs, stack})
+                case x:
+                  VErr{"page Resources not a dictionary (Table 34, 7.7.4)"}
+            case RErr{why}:
+              pgval(p, PGLeafParent{dict_get("Parent", P.ODict{els}), els, rk, cnt, cnt_expected, objs, stack})
+
+        case PGLeafParent{pr, els, rk, cnt, cnt_expected, objs, stack}:
+          match pr:
+            case Res{rt}:
+              pgval(p, PGLeafParentO{rt, els, rk, cnt, cnt_expected, objs, stack})
+            case RErr{why}:
+              VErr{"page missing Parent (Table 30, 7.7.3)"}
+
+        case PGLeafParentO{rt, +els, rk, cnt, cnt_expected, objs, stack}:
+          match rt:
+            case P.OInd{num, gen}:
+              pgval(p, PGLeafMb{dict_get("MediaBox", P.ODict{els}), els, rk, cnt, cnt_expected, objs, stack})
+            case P.ONil{}:
+              VErr{"page missing Parent (Table 30, 7.7.3)"}
+            case x:
+              VErr{"page Parent not an indirect reference (7.3.10, Table 30)"}
+
+        case PGLeafMb{mr, els, rk, cnt, cnt_expected, objs, stack}:
+          match mr:
+            case Res{mb}:
+              match mb:
+                case P.OArr{arr}:
+                  pgval(p, PGLeafType{dict_get("Type", P.ODict{els}), rk, cnt, cnt_expected, objs, stack})
+                case x:
+                  VErr{"page MediaBox not an array (7.3.6, Table 30)"}
+            case RErr{why}:
+              pgval(p, PGLeafType{dict_get("Type", P.ODict{els}), rk, cnt, cnt_expected, objs, stack})
+
+        case PGLeafType{td, rk, cnt, cnt_expected, objs, stack}:
+          match td:
+            case Res{tp}:
+              pgval(p, PGLeafTypeO{tp, rk, cnt, cnt_expected, objs, stack})
+            case RErr{why}:
+              VErr{"page missing Type (Table 30, 7.7.3)"}
+
+        case PGLeafTypeO{tp, rk, cnt, cnt_expected, objs, stack}:
+          match tp:
+            case P.OName{val}:
+              pgval(p, PGLeafIsPage{String.eq(val, "Page"), rk, cnt, cnt_expected, objs, stack})
+            case P.ONil{}:
+              VErr{"page missing Type (Table 30, 7.7.3)"}
+            case x:
+              VErr{"page Type not a name (7.3.5, Table 30)"}
+
+        case PGLeafIsPage{ip, rk, cnt, cnt_expected, objs, stack}:
+          match ip:
+            case True{}:
+              pgval(p, PGKidsLoop{rk, U32.add(cnt, 1), cnt_expected, objs, stack})
+            case False{}:
+              VErr{"page tree kid Type is not /Page (Table 30, 7.7.3)"}
+
+        case PGKidIsPages{ip, els, rk, cnt, cnt_expected, objs, stack}:
+          VErr{"page tree kid Type is not /Page (Table 30, 7.7.3)"}
+
+        case PGTerm{eq, cnt, stack}:
+          match eq:
+            case True{}:
+              match stack:
+                case Nil{}:
+                  VOk{cnt}
+                case Con{frame, rest}:
+                  match frame:
+                    case PGF{rem, objs2, nnum, ngen, acc, expected}:
+                      pgval(p, PGKidsLoop{rem, U32.add(acc, cnt), expected, objs2, rest})
+            case False{}:
+              VErr{"page tree Count does not match number of Kids (Table 30, 7.7.3)"}
+
+
 
 # ---- trav: the fuel-driven validation walker.
 # One match per round, in ascending field order; computed results ride
@@ -257,7 +539,7 @@ def trav(fuel: Nat, st: VST) -> ValRes:
         case VPgO{pg, +objs}:
           match pg:
             case P.OInd{num, gen}:
-              trav(p, VPn{resolve_obj(objs, num, gen, False{}, False{}, P.ONil{}), objs})
+              pgval(Nat.mul(llen(objs), 32n), PGNr{num, gen, objs, Nil{}, True{}})
             case P.ONil{}:
               # a null-valued entry is the omitted entry (7.3.9)
               VErr{"catalog missing Pages (Table 29, 7.7.2)"}
