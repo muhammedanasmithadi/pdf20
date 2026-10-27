@@ -203,7 +203,7 @@ def ser(+fuel: Nat, inp: SerInput) -> String:
               ser_str_bin(fp, val)
             case P.OArr{els}:
               SCon{'[', str_append(ser(fp, SIList{els}), "]")}
-            case P.ODict{els}:
+            case P.ODict{+els}:
               str_append("<< ", str_append(ser(fp, SIDict{els}), " >>"))
             case P.OInd{num, gen}:
               str_append(str_append(U32.show(num), " "), str_append(U32.show(gen), " R"))
@@ -320,11 +320,61 @@ def full_done2(+wr: BOut, +trailer: P.Obj) -> String:
 def full_done1(+hdr: String, wr: BOut, +trailer: P.Obj) -> String:
   str_append(hdr, full_done2(wr, trailer))
 
+# ---- trailer normalization for a consolidated (single-section) rewrite
+# (7.5.6): drop stale /Prev and /XRefStm entries (the merged document has no
+# previous section) and set /Size to the highest object number + 1.
+
+def max_obj_num_go(objs: List<&2, P.BO>, +acc: U32) -> U32:
+  match objs:
+    case Nil{}:
+      acc
+    case Con{P.BO{+num, gen, o}, t}:
+      max_obj_num_go(t, Bool.pick(U32, U32.is_gt(num, acc), num, acc))
+
+def max_obj_num(objs: List<&2, P.BO>) -> U32:
+  max_obj_num_go(objs, U32.from_nat(0n))
+
+def has_size_go(els: List<&2, P.PEntry>, acc: Bool) -> Bool:
+  match els:
+    case Nil{}:
+      acc
+    case Con{P.PE{+k, v}, t}:
+      has_size_go(t, Bool.or(acc, String.eq(k, "Size")))
+
+def has_size(els: List<&2, P.PEntry>) -> Bool:
+  has_size_go(els, False{})
+
+def rewrite_entries(+maxn: U32, els: List<&2, P.PEntry>) -> List<&2, P.PEntry>:
+  match els:
+    case Nil{}:
+      Nil{}
+    case Con{P.PE{+k, v}, t}:
+      +rest : List<&2, P.PEntry> = rewrite_entries(maxn, t)
+      is_prev : Bool = String.eq(k, "Prev")
+      is_xstm : Bool = String.eq(k, "XRefStm")
+      is_size : Bool = String.eq(k, "Size")
+      drop : Bool = Bool.or(is_prev, is_xstm)
+      new_size_val : P.Obj = P.ONum{False{}, U32.add(maxn, U32.from_nat(1n)), 0n, 1n}
+      # build the candidate entry for the non-drop case
+      size_entry : P.PEntry = P.PE{k, new_size_val}
+      keep_entry : P.PEntry = P.PE{k, v}
+      chosen_entry : P.PEntry = Bool.pick(P.PEntry, is_size, size_entry, keep_entry)
+      Bool.pick(List<&2, P.PEntry>, drop, rest, Con{chosen_entry, rest})
+
+def fix_trailer(trailer: P.Obj, +maxn: U32) -> P.Obj:
+  match trailer:
+    case P.ODict{+els}:
+      +new_els : List<&2, P.PEntry> = rewrite_entries(maxn, els)
+      hs : Bool = has_size(els)
+      Bool.pick(P.Obj, hs, P.ODict{new_els}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, U32.add(maxn, U32.from_nat(1n)), 0n, 1n}}, new_els}})
+    case x:
+      trailer
+
 def full_file_str(fr: X.FullRes) -> String:
   match fr:
     case X.FullErr{why}: why
-    case X.FullRes{objs, xref, trailer, sx}:
-      full_done1("%PDF-2.0\n%pdf20 writer\n", bo_walk(32768n, BM0{objs, U32.from_nat(23n)}), trailer)
+    case X.FullRes{+objs, xref, trailer, sx}:
+      full_done1("%PDF-2.0\n%pdf20 writer\n", bo_walk(32768n, BM0{objs, U32.from_nat(23n)}), fix_trailer(trailer, max_obj_num(objs)))
 
 # ---- read_file (from runner.bend) ----
 
