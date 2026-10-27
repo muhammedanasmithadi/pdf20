@@ -10,10 +10,9 @@
 # for bad contexts; the next event diagnoses an FBAD top. EOF, stream, and
 # xregime-boundary words turn into stop answers directly.
 #
-# v0.1 deferral (decided): header-number integrality/negativity validation
-# is kept out — u32of keeps a header number's whole part, so a negative or
-# fractional header number parses with loss; the validation pass (7.3.10:
-# positive object numbers, non-negative generations) closes that gap later.
+# header-number validation (7.3.10, 7.3.3): object numbers must be positive
+# integers; generation numbers non-negative integers. Implemented in pnum_hdr_obj
+# and pnum (PN1 arm). u32of still keeps the whole part for non-header contexts.
 
 import Base
 import ./lex.bend as Lx
