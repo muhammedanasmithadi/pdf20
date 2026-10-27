@@ -43,14 +43,14 @@ type XEntryRes is Data:
 # in_use = in_use flag for current entry (computed from f/n TWord at call site).
 # whole2 = gen, whole = offset of current entry.
 
-def xref_entry_fn(remaining: Nat, in_use: Bool, tt3: List<&2, Lx.Tok>, acc: List<&2, XE>, whole2: U32, whole: U32) -> XEntryRes:
+def xref_entry_fn(remaining: Nat, in_use: Bool, tt3: List<&2, Lx.Tok>, acc: List<&2, XE>, whole2: U32, whole: U32, +cur: U32) -> XEntryRes:
   match remaining:
     case 0n:
-      XEOk{List.reverse(&2, XE, Con{XE{0, whole2, in_use, whole}, acc}), tt3}
+      XEOk{List.reverse(&2, XE, Con{XE{cur, whole2, in_use, whole}, acc}), tt3}
     case 1n+p:
       match tt3:
         case Nil{}:
-          XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+          XEOk{Con{XE{cur, whole2, in_use, whole}, acc}, Nil{}}
         case Con{tk, tt}:
           match tk:
             case Lx.TNum{neg, whole3, fnum3, fden3}:
@@ -59,7 +59,7 @@ def xref_entry_fn(remaining: Nat, in_use: Bool, tt3: List<&2, Lx.Tok>, acc: List
                   # whole3 = next offset; expect gen TNum
                   match tt:
                     case Nil{}:
-                      XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                      XEOk{Con{XE{cur, whole2, in_use, whole}, acc}, Nil{}}
                     case Con{tk2, tt2}:
                       match tk2:
                         case Lx.TNum{neg2, whole4, fnum2, fden2}:
@@ -68,29 +68,29 @@ def xref_entry_fn(remaining: Nat, in_use: Bool, tt3: List<&2, Lx.Tok>, acc: List
                               # whole4 = next gen; expect f/n TWord
                               match tt2:
                                 case Nil{}:
-                                  XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                                  XEOk{Con{XE{cur, whole2, in_use, whole}, acc}, Nil{}}
                                 case Con{tk3, tt3}:
                                   match tk3:
                                     case Lx.TWord{val3}:
-                                      xref_entry_fn(p, String.eq(val3, "n"), tt3, Con{XE{0, whole2, in_use, whole}, acc}, whole4, whole3)
+                                      xref_entry_fn(p, String.eq(val3, "n"), tt3, Con{XE{cur, whole2, in_use, whole}, acc}, whole4, whole3, U32.add(cur, U32.from_nat(1n)))
                                     case x:
-                                      XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                                      XEOk{Con{XE{cur, whole2, in_use, whole}, acc}, Nil{}}
                             case 1n+p2:
                               XEErr{"xref entry generation shall be an integer (7.5.4, 7.3.3)"}
                         case x:
-                          XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                          XEOk{Con{XE{cur, whole2, in_use, whole}, acc}, Nil{}}
                     case x:
-                      XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+                      XEOk{Con{XE{cur, whole2, in_use, whole}, acc}, Nil{}}
                 case 1n+p3:
                   XEErr{"xref entry offset shall be an integer (7.5.4, 7.3.3)"}
             case x:
-              XEOk{Con{XE{0, whole2, in_use, whole}, acc}, Nil{}}
+              XEOk{Con{XE{cur, whole2, in_use, whole}, acc}, Nil{}}
 
 
 # ---- xref_entries: read `start count` header, then delegate to xref_entry_fn
 # for the first triplet; xref_entry_fn is self-recursive for the rest.
 
-def xref_entries(remaining: Nat, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> XEntryRes:
+def xref_entries_n(remaining: Nat, start: U32, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> XEntryRes:
   match remaining:
     case 0n:
       XEOk{List.reverse(&2, XE, acc), toks}
@@ -120,7 +120,7 @@ def xref_entries(remaining: Nat, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> X
                                   match tk3:
                                     case Lx.TWord{val}:
                                       # remaining-1 entries after this one
-                                      xref_entry_fn(p, String.eq(val, "n"), tt3, acc, whole2, whole)
+                                      xref_entry_fn(p, String.eq(val, "n"), tt3, acc, whole2, whole, start)
                                     case x:
                                       XEOk{acc, toks}
                             case 1n+p2:
@@ -140,6 +140,9 @@ def xref_entries(remaining: Nat, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> X
 # Self-recursive on shrinking token list.
 
 # ---- xref_offset_at: match the TNum after startxref keyword
+
+def xref_entries(remaining: Nat, toks: List<&2, Lx.Tok>, acc: List<&2, XE>) -> XEntryRes:
+  xref_entries_n(remaining, U32.from_nat(0n), toks, acc)
 
 def xref_offset_at(entries: List<&2, XE>, head: Lx.Tok) -> XRes:
   match head:
@@ -214,7 +217,7 @@ def xref_loop(fuel: Nat, st: XLoopSt) -> XRes:
               XErr{"unexpected end of tokens in xref subsection header (7.5.4)"}
             case Con{tk, tt}:
               match tk:
-                case Lx.TNum{neg, whole, fnum, fden}:
+                case Lx.TNum{neg, +whole, fnum, fden}:
                   match fnum:
                     case 0n:
                       # whole is start; expect count TNum
@@ -223,11 +226,11 @@ def xref_loop(fuel: Nat, st: XLoopSt) -> XRes:
                           XErr{"unexpected end of tokens in xref subsection header (7.5.4)"}
                         case Con{tk2, tt2}:
                           match tk2:
-                            case Lx.TNum{neg, whole, fnum, fden}:
+                            case Lx.TNum{neg, wholec, fnum, fden}:
                               match fnum:
                                 case 0n:
-                                  # whole is count; parse entries, then continue
-                                  xref_loop(fp, XPOST{xref_entries(U32.to_nat(whole), tt2, acc)})
+                                  # wholec is count; whole (outer) is start
+                                  xref_loop(fp, XPOST{xref_entries_n(U32.to_nat(wholec), whole, tt2, acc)})
                                 case 1n+p:
                                   XErr{"xref subsection count shall be an integer (7.5.4, 7.3.3)"}
                             case x:
@@ -1822,6 +1825,59 @@ def merge_prev_xres(objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx
       merged : List<&2, XE> = merge_xref(table, xref)
       FullRes{objs, merged, trailer, sx}
 
+# ---- free-entry (f / type-0) revocation (7.5.6): an object number whose
+# newest cross-reference entry is free must be dropped from the accumulated
+# object set, even if an earlier section defined it. A single-section table
+# (fold incoming section, or the final fold table) has at most one entry per
+# number; a merged /Prev or hybrid table lists older entries first, so the
+# newest matching entry is the last one. is_free_newest scans for that last
+# matching entry and reports its in_use flag (False for a free XE, True for
+# an in-use XE or a compressed XEC).
+# free status of the LAST matching entry for num (newest in /Prev-merged
+# lists, the only entry in a single-section table)
+def free_newest_acc(+num: U32, xs: List<&2, XE>, free: Bool) -> Bool:
+  match xs:
+    case Nil{}:
+      free
+    case Con{XE{n, g, iu, off}, t}:
+      eq : Bool = U32.is_eq(num, n)
+      new_free : Bool = Bool.pick(Bool, eq, Bool.not(iu), free)
+      free_newest_acc(num, t, new_free)
+    case Con{XEC{n, s, i}, t}:
+      eq : Bool = U32.is_eq(num, n)
+      new_free : Bool = Bool.pick(Bool, eq, False{}, free)
+      free_newest_acc(num, t, new_free)
+
+def is_free_newest(+num: U32, xs: List<&2, XE>) -> Bool:
+  free_newest_acc(num, xs, False{})
+
+def revoke_pick(free: Bool, num: U32, gen: U32, o: P.Obj, rest: List<&2, P.BO>) -> List<&2, P.BO>:
+  match free:
+    case True{}:
+      rest
+    case False{}:
+      Con{P.BO{num, gen, o}, rest}
+
+# drop every object whose number is free in the supplied xref table
+def revoke_free(+fuel: Nat, +objs: List<&2, P.BO>, +xref: List<&2, XE>) -> List<&2, P.BO>:
+  match fuel:
+    case 0n:
+      objs
+    case 1n+fp:
+      match objs:
+        case Nil{}:
+          Nil{}
+        case Con{P.BO{num, gen, o}, t}:
+          revoke_pick(is_free_newest(num, xref), num, gen, o, revoke_free(fp, t, xref))
+
+# thin wrapper that also filters a finished FullRes by its own xref table
+def revoke_prev(fr: FullRes) -> FullRes:
+  match fr:
+    case FullErr{why}:
+      FullErr{why}
+    case FullRes{objs, +xref, +trailer, sx}:
+      FullRes{revoke_free(32768n, objs, xref), xref, trailer, sx}
+
 def merge_prev_impl(objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32, bytes: List<&2, U32>, po: Nat) -> FullRes:
   match po:
     case 0n:
@@ -1833,8 +1889,8 @@ def merge_prev_once(fr: FullRes, bytes: List<&2, U32>) -> FullRes:
   match fr:
     case FullErr{why}:
       FullErr{why}
-    case FullRes{objs, xref, +trailer, sx}:
-      merge_prev_impl(objs, xref, trailer, sx, bytes, prev_from_trailer(trailer))
+    case FullRes{objs, +xref, +trailer, sx}:
+      revoke_prev(merge_prev_impl(objs, xref, trailer, sx, bytes, prev_from_trailer(trailer)))
 
 
 # ---- hybrid reference support (Table 19): merge an XRefStm stream's entries
@@ -1878,8 +1934,8 @@ def merge_xrefstm_once(fr: FullRes, bytes: List<&2, U32>, base: Nat) -> FullRes:
   match fr:
     case FullErr{why}:
       FullErr{why}
-    case FullRes{objs, xref, +trailer, sx}:
-      merge_xrefstm_impl(objs, xref, trailer, sx, bytes, xrefstm_from_trailer(trailer), base)
+    case FullRes{objs, +xref, +trailer, sx}:
+      revoke_prev(merge_xrefstm_impl(objs, xref, trailer, sx, bytes, xrefstm_from_trailer(trailer), base))
 
 # ---- incremental update files (7.5.6): section segmentation at %%EOF ----
 # A file with updates is a sequence of sections, each ending in %%EOF. The
@@ -2001,8 +2057,8 @@ def dedup(+fuel: Nat, +st: DSt) -> List<&2, P.BO>:
 
 def seg_fin(a: Msgt) -> FullRes:
   match a:
-    case MT{objs, xref, trailer, sx}:
-      FullRes{dedup(32768n, DD{objs}), xref, trailer, sx}
+    case MT{objs, +xref, trailer, sx}:
+      FullRes{revoke_free(32768n, dedup(32768n, DD{objs}), xref), xref, trailer, sx}
 
 def seg_fold(+fuel: Nat, +st: XAll) -> FullRes:
   match fuel:
@@ -2020,10 +2076,14 @@ def seg_fold(+fuel: Nat, +st: XAll) -> FullRes:
           match fr:
             case FullErr{why}:
               FullErr{why}
-            case FullRes{objs, xref, +trailer, sx}:
+            case FullRes{objs, +xref, +trailer, sx}:
               match acc:
                 case MT{a_objs, a_xre, a_tr, a_sx}:
-                  seg_fold(fp, XAS{pos, Nat.add(1n, p), MT{List.append(&2, P.BO, objs, a_objs), xref, trailer, sx}, full})
+                  # free entries in this section revoke objects accumulated from
+                  # earlier sections (7.5.6); the section's own definitions are
+                  # appended afterwards, so a later redefinition survives
+                  revoked : List<&2, P.BO> = revoke_free(32768n, a_objs, xref)
+                  seg_fold(fp, XAS{pos, Nat.add(1n, p), MT{List.append(&2, P.BO, objs, revoked), xref, trailer, sx}, full})
 
 def xfile_route(+bytes: List<&2, U32>, posl: List<&2, Nat>) -> FullRes:
   match posl:
