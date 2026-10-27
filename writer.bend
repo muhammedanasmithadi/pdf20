@@ -63,6 +63,68 @@ def u32_show(+n: U32) -> String:
 def u32_pad(+w: Nat, +n: U32) -> String:
   pad_str(w, '0', u32_show(n))
 
+# ---- string emission (7.3.4): literal for plain printable bytes, hex
+# otherwise. The parser hands us decoded byte values, so a raw literal
+# re-emission is only sound when every byte is printable ASCII and none
+# is a string special ( ( ) \ ); binary bytes go out in the hex form.
+
+def char_bin(+v: U32) -> Bool:
+  Bool.or(U32.is_le(v, 31), Bool.or(U32.is_ge(v, 127), Bool.or(U32.is_eq(v, 40), Bool.or(U32.is_eq(v, 41), U32.is_eq(v, 92)))))
+
+def char_bin_of(+h: Char) -> Bool:
+  char_bin(Char.to_u32(h))
+
+def str_binchk(+fuel: Nat, +s: String, +acc: Bool) -> Bool:
+  match fuel:
+    case 0n: acc
+    case 1n+fp:
+      match s:
+        case SNil{}: acc
+        case SCon{h, t}: str_binchk(fp, t, Bool.or(acc, char_bin_of(h)))
+
+def hex_c_route(+d: U32, +lt: Bool) -> Char:
+  match lt:
+    case True{}: Char.from_u32(U32.add(48, d))
+    case False{}: Char.from_u32(U32.add(55, d))
+
+def hex_c(+d: U32) -> Char:
+  hex_c_route(d, U32.is_lt(d, 10))
+
+def hex_dig(+d: U32) -> String:
+  SCon{hex_c(d), SNil{}}
+
+def hex_split(qr: Nat & Nat) -> String:
+  (q, r) = qr
+  str_append(hex_dig(U32.from_nat(q)), hex_dig(U32.from_nat(r)))
+
+def hex_pair(+v: Nat) -> String:
+  hex_split(Nat.divmod(v, 16n))
+
+def hex2(+c: Char) -> String:
+  hex_pair(U32.to_nat(Char.to_u32(c)))
+
+def hex_str(+fuel: Nat, +val: String) -> String:
+  match fuel:
+    case 0n: SNil{}
+    case 1n+fp:
+      match val:
+        case SNil{}: SNil{}
+        case SCon{h, t}: str_append(hex2(h), hex_str(fp, t))
+
+def ser_str_lit(+fuel: Nat, +val: String) -> String:
+  SCon{'(', str_append(val, ")")}
+
+def ser_str_hex(+fuel: Nat, +val: String) -> String:
+  SCon{'<', str_append(hex_str(fuel, val), ">")}
+
+def ser_str_pick(+fuel: Nat, +bin: Bool, +val: String) -> String:
+  match bin:
+    case True{}: ser_str_hex(fuel, val)
+    case False{}: ser_str_lit(fuel, val)
+
+def ser_str_bin(+fuel: Nat, +val: String) -> String:
+  ser_str_pick(fuel, str_binchk(4096n, val, False{}), val)
+
 # ---- ser: object model to text (v0 core; SIDict spacing fixed, stream body added) ----
 
 type SerInput is Data:
@@ -101,7 +163,7 @@ def ser(+fuel: Nat, inp: SerInput) -> String:
             case P.OName{val}:
               SCon{'/', val}
             case P.OStr{val}:
-              SCon{'(', str_append(val, ")")}
+              ser_str_bin(fp, val)
             case P.OArr{els}:
               SCon{'[', str_append(ser(fp, SIList{els}), "]")}
             case P.ODict{els}:
@@ -133,15 +195,19 @@ def entry_of(+fuel: Nat, +num: U32, +gen: U32, +o: P.Obj) -> String:
 def row_of(+off: U32, +gen5: String) -> String:
   str_append(str_append(u32_pad(10n, off), " "), str_append(gen5, " n \n"))
 
+# xref row carried together with its object number (7.5.4 subsections)
+type BRow is Data:
+  BRow{num: U32, row: String}
+
 type BSt is Data:
   BM0{bos: List<&2, P.BO>, off: U32}
-  BM1{slk: SLK, gen5: String, off: U32, rest: List<&2, P.BO>}
+  BM1{num: U32, slk: SLK, gen5: String, off: U32, rest: List<&2, P.BO>}
 
 type BOut is Data:
-  BOut{out: String, rows: List<&2, String>, cnt: U32, sx: U32}
+  BOut{out: String, rows: List<&2, BRow>, cnt: U32, sx: U32}
 
 # prepends the entry to the output body and the row to the xref rows
-def bo_join(+wr: BOut, +row: String, +ec: String) -> BOut:
+def bo_join(+wr: BOut, +row: BRow, +ec: String) -> BOut:
   match wr:
     case BOut{out, rows, cnt, sx}:
       BOut{str_append(ec, out), Con{row, rows}, U32.add(cnt, U32.from_nat(1n)), sx}
@@ -158,17 +224,53 @@ def bo_walk(+fuel: Nat, +st: BSt) -> BOut:
             case Nil{}:
               BOut{SNil{}, Nil{}, U32.from_nat(0n), off}
             case Con{P.BO{num, gen, o}, rest}:
-              bo_walk(fp, BM1{slk_of(64n, entry_of(1024n, num, gen, o)), u32_pad(5n, gen), off, rest})
-        case BM1{SLK{ln, es}, gen5, off, rest}:
-          bo_join(bo_walk(fp, BM0{rest, U32.add(off, U32.from_nat(ln))}), row_of(off, gen5), es)
+              bo_walk(fp, BM1{num, slk_of(64n, entry_of(1024n, num, gen, o)), u32_pad(5n, gen), off, rest})
+        case BM1{num, SLK{ln, es}, gen5, off, rest}:
+          bo_join(bo_walk(fp, BM0{rest, U32.add(off, U32.from_nat(ln))}), BRow{num, row_of(off, gen5)}, es)
 
 # ---- full file assembly ----
 
-def tail_cnt(+cnt: U32) -> String:
-  str_append("0 ", str_append(U32.show(U32.add(cnt, U32.from_nat(1n))), "\n"))
+# subsection header: "first count" + this run's rows (7.5.4)
+def sec_text(+start: U32, +cnt: U32, +rowsd: String) -> String:
+  str_append(str_append(str_append(u32_show(start), " "), str_append(u32_show(cnt), "\n")), rowsd)
 
-def tail_xref(+rows: List<&2, String>, +cnt: U32) -> String:
-  str_append(str_append("xref\n", tail_cnt(cnt)), str_append("0000000000 65535 f \n", cat(rows)))
+def run_eq(+num: U32, +start: U32, +cnt: U32) -> Bool:
+  U32.is_eq(num, U32.add(start, cnt))
+
+# assembler modes: AP opens the first run, AR streams rows into the current
+# run, AB applies the contiguity comparison (compare computed in AR, matched
+# as a state field in AB, per the no-match-on-computed-value rule)
+type ASt is Data:
+  AP{rows: List<&2, BRow>}
+  AR{rows: List<&2, BRow>, cur: String, start: U32, cnt: U32}
+  AB{eq: Bool, num: U32, row: String, rest: List<&2, BRow>, cur: String, start: U32, cnt: U32}
+
+def asm_tail(+fuel: Nat, +st: ASt) -> String:
+  match fuel:
+    case 0n:
+      "## assembler fuel exhausted\n"
+    case 1n+fp:
+      match st:
+        case AP{rows}:
+          match rows:
+            case Nil{}: SNil{}
+            case Con{BRow{num, row}, rest}:
+              asm_tail(fp, AR{rest, row, num, U32.from_nat(1n)})
+        case AR{rows, cur, start, cnt}:
+          match rows:
+            case Nil{}:
+              sec_text(start, cnt, cur)
+            case Con{BRow{num, row}, rest}:
+              asm_tail(fp, AB{run_eq(num, start, cnt), num, row, rest, cur, start, cnt})
+        case AB{eq, num, row, rest, cur, start, cnt}:
+          match eq:
+            case True{}:
+              asm_tail(fp, AR{rest, str_append(cur, row), start, U32.add(cnt, U32.from_nat(1n))})
+            case False{}:
+              str_append(sec_text(start, cnt, cur), asm_tail(fp, AR{rest, row, num, U32.from_nat(1n)}))
+
+def tail_xref(+rows: List<&2, BRow>) -> String:
+  str_append(str_append("xref\n0 1\n", "0000000000 65535 f \n"), asm_tail(32768n, AP{rows}))
 
 def tail_end(+trailer: P.Obj, +sx: U32) -> String:
   str_append(str_append("trailer\n", str_append(ser(1024n, SIObj{trailer}), "\nstartxref\n")), str_append(u32_show(sx), "\n%%EOF\n"))
@@ -176,7 +278,7 @@ def tail_end(+trailer: P.Obj, +sx: U32) -> String:
 def full_done2(+wr: BOut, +trailer: P.Obj) -> String:
   match wr:
     case BOut{out, rows, cnt, sx}:
-      str_append(out, str_append(tail_xref(rows, cnt), tail_end(trailer, sx)))
+      str_append(out, str_append(tail_xref(rows), tail_end(trailer, sx)))
 
 def full_done1(+hdr: String, wr: BOut, +trailer: P.Obj) -> String:
   str_append(hdr, full_done2(wr, trailer))

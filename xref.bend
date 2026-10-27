@@ -191,37 +191,72 @@ def xref_parse_entries_done(xr: XEntryRes) -> XRes:
       XErr{why}
 
 
+# ---- xref_loop: one self-recursive machine for the whole xref section.
+# 7.5.4 allows consecutive subsections, so after one subsection's entries a
+# TNum where the trailer would be means another subsection header. Modes:
+# XSUB reads a `start count` header and defers to xref_entries; XPOST routes
+# the computed entry result: another TNum re-enters XSUB with the entries
+# accumulated so far, anything else resumes the startxref scan.
+
+type XLoopSt is Data:
+  XSUB{toks: List<&2, Lx.Tok>, acc: List<&2, XE>}
+  XPOST{xpst: XEntryRes}
+
+def xref_loop(fuel: Nat, st: XLoopSt) -> XRes:
+  match fuel:
+    case 0n:
+      XErr{"too many xref subsections (7.5.4)"}
+    case 1n+fp:
+      match st:
+        case XSUB{toks, acc}:
+          match toks:
+            case Nil{}:
+              XErr{"unexpected end of tokens in xref subsection header (7.5.4)"}
+            case Con{tk, tt}:
+              match tk:
+                case Lx.TNum{neg, whole, fnum, fden}:
+                  match fnum:
+                    case 0n:
+                      # whole is start; expect count TNum
+                      match tt:
+                        case Nil{}:
+                          XErr{"unexpected end of tokens in xref subsection header (7.5.4)"}
+                        case Con{tk2, tt2}:
+                          match tk2:
+                            case Lx.TNum{neg, whole, fnum, fden}:
+                              match fnum:
+                                case 0n:
+                                  # whole is count; parse entries, then continue
+                                  xref_loop(fp, XPOST{xref_entries(U32.to_nat(whole), tt2, acc)})
+                                case 1n+p:
+                                  XErr{"xref subsection count shall be an integer (7.5.4, 7.3.3)"}
+                            case x:
+                              XErr{"xref subsection count malformed (7.5.4)"}
+                    case 1n+p:
+                      XErr{"xref subsection start shall be an integer (7.5.4, 7.3.3)"}
+                case x:
+                  XErr{"xref subsection start malformed (7.5.4)"}
+        case XPOST{xpst}:
+          match xpst:
+            case XEErr{why}:
+              XErr{why}
+            case XEOk{entries, rem}:
+              match rem:
+                case Nil{}:
+                  XErr{"startxref not found in xref section (7.5.4)"}
+                case Con{head, rest}:
+                  match head:
+                    case Lx.TNum{neg, whole, fnum, fden}:
+                      xref_loop(fp, XSUB{rem, entries})
+                    case x:
+                      xref_parse_entries_done(XEOk{entries, rem})
+
+
 # ---- xref_parse: parse full xref section from tokens (after `xref` consumed)
-# Token sequence: TNum(start) TNum(count) entries... [trailer dict] startxref TNum(offset)
+# Token sequence: (TNum(start) TNum(count) entries...)* [trailer dict] startxref TNum(offset)
 
 def xref_parse(toks: List<&2, Lx.Tok>) -> XRes:
-  match toks:
-    case Nil{}:
-      XErr{"unexpected end of tokens in xref section (7.5.4)"}
-    case Con{tk, tt}:
-      match tk:
-        case Lx.TNum{neg, whole, fnum, fden}:
-          match fnum:
-            case 0n:
-              # whole is start; expect count TNum
-              match tt:
-                case Nil{}:
-                  XErr{"unexpected end of tokens in xref subsection header (7.5.4)"}
-                case Con{tk2, tt2}:
-                  match tk2:
-                    case Lx.TNum{neg, whole, fnum, fden}:
-                      match fnum:
-                        case 0n:
-                          # whole is count; parse entries
-                          xref_parse_entries_done(xref_entries(U32.to_nat(whole), tt2, Nil{}))
-                        case 1n+p:
-                          XErr{"xref subsection count shall be an integer (7.5.4, 7.3.3)"}
-                    case x:
-                      XErr{"xref subsection count malformed (7.5.4)"}
-            case 1n+p:
-              XErr{"xref subsection start shall be an integer (7.5.4, 7.3.3)"}
-        case x:
-          XErr{"xref subsection start malformed (7.5.4)"}
+  xref_loop(4096n, XSUB{toks, Nil{}})
 
 
 # ---- xfile: full file parse — lex → parse objects → parse xref regime.
