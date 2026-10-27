@@ -35,6 +35,7 @@ type VST is Data:
   VCnt{cr: Resolved, dict_obj: P.Obj, objs: List<&2, P.BO>}
   VPr{pr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VPrO{rt: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
+  VMb{mr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
   VRt{rg: Resolved, objs: List<&2, P.BO>}
   VRtO{rt: P.Obj, objs: List<&2, P.BO>}
   VCt{cr: Resolved, objs: List<&2, P.BO>}
@@ -396,15 +397,29 @@ def trav(fuel: Nat, st: VST) -> ValRes:
             case RErr{why}:
               VErr{"page missing Parent (Table 30, 7.7.3)"}
 
-        case VPrO{rt, els, rk, cnt, objs}:
+        case VPrO{rt, +els, rk, cnt, objs}:
           match rt:
             case P.OInd{num, gen}:
-              trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
+              # check MediaBox (Table 30: required, inheritable)
+              trav(p, VMb{dict_get("MediaBox", P.ODict{els}), els, rk, cnt, objs})
             case P.ONil{}:
               # a null-valued entry is the omitted entry (7.3.9)
               VErr{"page missing Parent (Table 30, 7.7.3)"}
             case x:
               VErr{"page Parent not an indirect reference (7.3.10, Table 30)"}
+
+        # -- page MediaBox (Table 30): if present, must be an array
+        case VMb{mr, +els, rk, cnt, objs}:
+          match mr:
+            case Res{mb}:
+              match mb:
+                case P.OArr{arr}:
+                  trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
+                case x:
+                  VErr{"page MediaBox not an array (7.3.6, Table 30)"}
+            case RErr{why}:
+              # MediaBox missing, might be inherited - OK for v0
+              trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
 
         case VKt{td, rk, cnt, objs}:
           match td:

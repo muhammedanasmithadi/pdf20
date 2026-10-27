@@ -504,6 +504,17 @@ shall be a non-negative integer. The validator now checks this:
 
 One golden law: `val_page_no_count` (page tree without Count → diagnostic).
 
+## Page MediaBox validation (Table 30, 7.7.3)
+
+Date: 2026-10-26. MediaBox is a required entry on Page (Table 30) that shall be
+an array. For v0, the validator checks that if MediaBox is present, it is an
+array (inheritance from page tree root is not checked — v1 scope). Diagnostics:
+
+- "page MediaBox not an array (7.3.6, Table 30)" if present but not an array
+
+The check uses the `VMb` state in the page walker (MediaBox before Type),
+with `+els` borrowed pattern to stay within Bend quantity marks.
+
 ## Resources validation (Table 34, 7.7.4)
 
 Date: 2026-10-26. Resources is an optional entry on Page and Catalog dictionaries

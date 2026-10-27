@@ -32,7 +32,7 @@ Errata page last updated 2026-03.
 | 7.7 | Document structure: catalog (Table 29), page tree (Tables 30–31), name dictionary (Table 32), resources (Table 34) | catalog Type/Pages, page tree Type/Kids, page Type/Parent, catalog/page Resources — all validated |
 | 7.8 | Content streams and resources: stream syntax (7.3.8), operands/operators, resource dictionaries (Table 34) | stream Length audit (7.3.8.2); content stream parsing not yet implemented (v1) |
 | 7.9 | Common data structures: rectangles, arrays, name trees, number trees | parsed as generic objects; no dedicated validation (v1) |
-| 7.10 | File trailer, catalog (Table 29), page tree (Tables 30–31), resources (Table 34) | validation pass; page Parent (Table 30) validated as indirect reference; Count (Table 30) validated as non-negative integer; catalog/page Resources (Table 34) validated as dictionary if present; null → missing diagnostic |
+| 7.10 | File trailer, catalog (Table 29), page tree (Tables 30–31), resources (Table 34) | validation pass; page Parent (Table 30) validated as indirect reference; Count (Table 30) validated as non-negative integer; page MediaBox (Table 30) validated as array if present; catalog/page Resources (Table 34) validated as dictionary if present; null → missing diagnostic |
 | F (Annex) | Linearized PDF (Table F.1) | read first-page chain, v1 |
 
 The errata site lists every corrected table; the ones touching v0 are:
