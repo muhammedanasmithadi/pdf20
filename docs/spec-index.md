@@ -26,6 +26,12 @@ Errata page last updated 2026-03.
 | 7.5.7 | Object streams (Table 16) | Table 16 dict walk (Type ObjStm, N and First direct non-negative; Filter rejected in v0); pair-header scan inside the First budget with pair offsets relative to the raw stream data (Table 16, 7.5.7); increasing-order check; per-object slicing by take/sdrop and stored-value parse (+endobj, NOTE 7); stored stream objects and bare references rejected (7.5.7); memo table so type-2 rows index decoded streams (Table 18, 7.5.8.3)
 | 7.5 | File structure: header, indirect objects, xref tables (Table 15 trailer, Table 17–18 xref streams, Table 19 hybrid reference), object streams, incremental updates | resolver + merge |
 | 7.6 | Encryption — Encrypt entry in trailer (Table 15); v0 rejects encrypted documents | validate rejects /Encrypt entry: "document is encrypted (7.6); encryption not supported in v0" |
+| 7.7 | Document structure: catalog (Table 29), page tree (Tables 30–31), name dictionary (Table 32), resources (Table 34) | catalog Type/Pages/Resources, page tree Type/Kids, page Type/Parent/Resources — all validated |
+| 7.8 | Content streams and resources: stream syntax (7.3.8), operands/operators, resource dictionaries (Table 34) | stream Length audit (7.3.8.2); content stream parsing not yet implemented (v1) |
+| 7.9 | Common data structures: rectangles, arrays, name trees, number trees | parsed as generic objects; no dedicated validation (v1) |
+| 7.7 | Document structure: catalog (Table 29), page tree (Tables 30–31), name dictionary (Table 32), resources (Table 34) | catalog Type/Pages, page tree Type/Kids, page Type/Parent, catalog/page Resources — all validated |
+| 7.8 | Content streams and resources: stream syntax (7.3.8), operands/operators, resource dictionaries (Table 34) | stream Length audit (7.3.8.2); content stream parsing not yet implemented (v1) |
+| 7.9 | Common data structures: rectangles, arrays, name trees, number trees | parsed as generic objects; no dedicated validation (v1) |
 | 7.10 | File trailer, catalog (Table 29), page tree (Tables 30–31), resources (Table 34) | validation pass; page Parent (Table 30) validated as indirect reference; catalog/page Resources (Table 34) validated as dictionary if present; null → missing diagnostic |
 | F (Annex) | Linearized PDF (Table F.1) | read first-page chain, v1 |
 
