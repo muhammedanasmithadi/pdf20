@@ -1,7 +1,9 @@
-# writer.bend — structural PDF writer (v0.1). Canonical re-serialization of
+# writer.bend — structural PDF writer (v0.3). Canonical re-serialization of
 # the parsed object graph; not bit-precise. Emits header, all indirect
-# objects with byte-offset tracking, an xref table, trailer, startxref and
-# %%EOF. Assumes object numbers are contiguous 1..N (single subsection).
+# objects (later-wins merge across incremental-update sections) with
+# byte-offset tracking, xref subsections per contiguous object run, trailer,
+# startxref and %%EOF. CLI: writer.bend <input.pdf> <output.pdf> — the
+# output file is written with File.write_bytes, byte for byte.
 # Note: the header binary-comment is ASCII-only (Bend has no \xff escapes),
 # so strict 7.5.2 "binary marker" conformance is a known v0.1 deviation.
 
@@ -146,6 +148,41 @@ def ser_num(neg: Bool, whole: U32, fnum: Nat, fden: Nat) -> String:
     case False{}:
       ser_num_pos(whole, fnum, fden)
 
+# stream tail (7.3.8.1: one end-of-line marker between the body and
+# endstream, not part of either): the separating EOL is needed only when the
+# body itself does not end with one; bodies that already end in LF/CR keep
+# their own terminator so the lex round trip recovers the body byte-exactly
+def s_eol_e(+h: Char) -> Bool:
+  U32.is_eq(Char.to_u32(h), 10)
+
+def s_eol_r(+h: Char) -> Bool:
+  U32.is_eq(Char.to_u32(h), 13)
+
+def s_eol_ckr(+nl: Bool, +cr: Bool) -> String:
+  match nl:
+    case True{}:
+      "endstream\n"
+    case False{}:
+      match cr:
+        case True{}:
+          "endstream\n"
+        case False{}:
+          "\nendstream\n"
+
+def s_eol_tail2(+rev: String) -> String:
+  match rev:
+    case SNil{}:
+      "\nendstream\n"
+    case SCon{+h, t}:
+      s_eol_ckr(s_eol_e(h), s_eol_r(h))
+
+def bool_kw(+b: Bool) -> String:
+  match b:
+    case True{}:
+      "true"
+    case False{}:
+      "false"
+
 def ser(+fuel: Nat, inp: SerInput) -> String:
   match fuel:
     case 0n:
@@ -157,7 +194,7 @@ def ser(+fuel: Nat, inp: SerInput) -> String:
             case P.ONil{}:
               "null"
             case P.OBool{b}:
-              Bool.show(b)
+              bool_kw(b)
             case P.ONum{neg, whole, fnum, fden}:
               ser_num(neg, whole, fnum, fden)
             case P.OName{val}:
@@ -170,8 +207,8 @@ def ser(+fuel: Nat, inp: SerInput) -> String:
               str_append("<< ", str_append(ser(fp, SIDict{els}), " >>"))
             case P.OInd{num, gen}:
               str_append(str_append(U32.show(num), " "), str_append(U32.show(gen), " R"))
-            case P.OStream{d, dat}:
-              str_append(str_append(str_append(ser(fp, SIObj{d}), " stream\n"), dat), "\nendstream\n")
+            case P.OStream{d, +dat}:
+              str_append(str_append(str_append(ser(fp, SIObj{d}), " stream\n"), dat), s_eol_tail2(String.reverse(dat)))
         case SIList{els}:
           match els:
             case Nil{}: SNil{}
@@ -320,10 +357,36 @@ def read_file(path: List<&2, U32>) -> IO(List<&2, U32>):
     ret : List<&2, U32> <- read_size_exec(sfp)
     return ret
 
+def write_pack_exec(wbp: File & Result<&1, &1, U32 & String, Unit>) -> IO(Unit):
+  (f9, wres) = wbp
+  match wres:
+    case Fail{(code, msg)}:
+      IO.die(Unit, code, msg)
+    case Done{u}:
+      IO.pure(Unit, u)
+
+def write_file_exec(f8: File, +out: List<&2, U32>) -> IO(Unit):
+  do IO<Unit>:
+    wbp : File & Result<&1, &1, U32 & String, Unit> <- File.write_bytes(f8, out)
+    ret : Unit <- write_pack_exec(wbp)
+    return ret
+
+def io_go(inout: String & String) -> IO(Unit):
+  (path_str, out_str) = inout
+  do IO<Unit>:
+    bytes : List<&2, U32> <- read_file(P.str_byts(path_str))
+    fr : X.FullRes = X.xfile_bytes(bytes)
+    outp : List<&2, U32> = P.str_byts(full_file_str(fr))
+    f8 : File <- IO.try(File, File.open_bytes(P.str_byts(out_str), "w"))
+    rwx : Unit <- write_file_exec(f8, outp)
+    return rwx
+
+# argv[2] names the output file; File.write_bytes emits the byte list
+# unencoded, so the written file is the exact byte image of the serialized
+# document (IO.print would UTF-8-encode every char past 127 and mangle
+# binary stream bodies for the next reader)
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    path_str : String = P.arg1(args)
-    bytes : List<&2, U32> <- read_file(P.str_byts(path_str))
-    fr : X.FullRes = X.xfile_bytes(bytes)
-    IO.print(full_file_str(fr))
+    gox : Unit <- io_go(P.args2p(args))
+    return gox

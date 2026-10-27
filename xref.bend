@@ -1866,20 +1866,172 @@ def xrefstm_entries_from_fr(fr: FullRes) -> List<&2, XE>:
 def parse_xrefstm_entries(bs: List<&2, U32>) -> List<&2, XE>:
   xrefstm_entries_from_fr(xfile(P.plx_full(Lx.lex(bs))))
 
-def merge_xrefstm_impl(objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32, bytes: List<&2, U32>, xo: Nat) -> FullRes:
+def merge_xrefstm_impl(objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32, bytes: List<&2, U32>, xo: Nat, base: Nat) -> FullRes:
   match xo:
     case 0n:
       FullRes{objs, xref, trailer, sx}
     case 1n+p:
-      merged : List<&2, XE> = merge_xref(parse_xrefstm_entries(bytes_drop(xo, bytes)), xref)
+      merged : List<&2, XE> = merge_xref(parse_xrefstm_entries(bytes_drop(Nat.sub(xo, base), bytes)), xref)
       FullRes{objs, merged, trailer, sx}
 
-def merge_xrefstm_once(fr: FullRes, bytes: List<&2, U32>) -> FullRes:
+def merge_xrefstm_once(fr: FullRes, bytes: List<&2, U32>, base: Nat) -> FullRes:
   match fr:
     case FullErr{why}:
       FullErr{why}
     case FullRes{objs, xref, +trailer, sx}:
-      merge_xrefstm_impl(objs, xref, trailer, sx, bytes, xrefstm_from_trailer(trailer))
+      merge_xrefstm_impl(objs, xref, trailer, sx, bytes, xrefstm_from_trailer(trailer), base)
 
+# ---- incremental update files (7.5.6): section segmentation at %%EOF ----
+# A file with updates is a sequence of sections, each ending in %%EOF. The
+# last section wins for the trailer and startxref; objects merge with the
+# latest definition of each object number winning. The byte-level %%EOF
+# scan can be fooled by a content stream containing the literal marker;
+# real writers reserve the comment line, so this is a tolerated v0.3 risk.
+
+def llen_byts(bs: List<&2, U32>) -> Nat:
+  match bs:
+    case Nil{}: 0n
+    case Con{h, t}: Nat.add(1n, llen_byts(t))
+
+def bytes_take(n: Nat, bs: List<&2, U32>) -> List<&2, U32>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+fp:
+      match bs:
+        case Nil{}:
+          Nil{}
+        case Con{h, t}:
+          Con{h, bytes_take(fp, t)}
+
+# five-mode byte scanner for the %%EOF marker: modes carry the collected
+# match positions (index of the F byte) and the current index; matching
+# the literal byte comparisons rides on the dual-scrutinee match
+type ESt is Data:
+  E0{acc: List<&2, Nat>, i: Nat}
+  E1{acc: List<&2, Nat>, i: Nat}
+  E2{acc: List<&2, Nat>, i: Nat}
+  E3{acc: List<&2, Nat>, i: Nat}
+  E4{acc: List<&2, Nat>, i: Nat}
+
+def eof_done(st: ESt) -> List<&2, Nat>:
+  match st:
+    case E0{a, i}: List.reverse(&2, Nat, a)
+    case E1{a, i}: List.reverse(&2, Nat, a)
+    case E2{a, i}: List.reverse(&2, Nat, a)
+    case E3{a, i}: List.reverse(&2, Nat, a)
+    case E4{a, i}: List.reverse(&2, Nat, a)
+
+def eof_step(st: ESt, bn: Nat) -> ESt:
+  match st bn:
+    case E0{a, i} 37n: E1{a, Nat.add(1n, i)}
+    case E0{a, i} x: E0{a, Nat.add(1n, i)}
+    case E1{a, i} 37n: E2{a, Nat.add(1n, i)}
+    case E1{a, i} x: E0{a, Nat.add(1n, i)}
+    case E2{a, i} 69n: E3{a, Nat.add(1n, i)}
+    case E2{a, i} x: E0{a, Nat.add(1n, i)}
+    case E3{a, i} 79n: E4{a, Nat.add(1n, i)}
+    case E3{a, i} x: E0{a, Nat.add(1n, i)}
+    case E4{a, +i} 70n: E0{Con{i, a}, Nat.add(1n, i)}
+    case E4{a, i} x: E0{a, Nat.add(1n, i)}
+
+def eof_scan(+fuel: Nat, bs: List<&2, U32>, +st: ESt) -> List<&2, Nat>:
+  match fuel:
+    case 0n:
+      eof_done(st)
+    case 1n+fp:
+      match bs:
+        case Nil{}:
+          eof_done(st)
+        case Con{b, t}:
+          eof_scan(fp, t, eof_step(st, U32.to_nat(b)))
+
+# merged accumulator: object set grows, the newest section carries trailer,
+# xref table and startxref (7.5.6: the newest document is current)
+type Msgt is Data:
+  MT{objs: List<&2, P.BO>, xref: List<&2, XE>, trailer: P.Obj, sx: U32}
+
+type XAll is Data:
+  XAS{pos: List<&2, Nat>, base: Nat, acc: Msgt, full: List<&2, U32>}
+  XP{fr: FullRes, p: Nat, pos: List<&2, Nat>, base: Nat, acc: Msgt, full: List<&2, U32>}
+
+# one section: slice [base..fend], parse it as a self-contained file, then
+# apply any hybrid /XRefStm pointing into the file after `base` (7.5.6,
+# Table 19)
+def xseg(+fend: Nat, +base: Nat, +full: List<&2, U32>) -> FullRes:
+  seg : List<&2, U32> = bytes_take(Nat.add(Nat.sub(fend, base), 1n), bytes_drop(base, full))
+  fr : FullRes = xfile(P.plx_full(Lx.lex(seg)))
+  merge_xrefstm_once(fr, bytes_drop(base, full), base)
+
+# object-number membership, for the later-wins object merge
+def has_num_go(+n: U32, +ls: List<&2, P.BO>, +acc: Bool) -> Bool:
+  match ls:
+    case Nil{}:
+      acc
+    case Con{P.BO{num, gen, o}, t}:
+      has_num_go(n, t, Bool.or(acc, U32.is_eq(n, num)))
+
+def has_num(+n: U32, +ls: List<&2, P.BO>) -> Bool:
+  has_num_go(n, ls, False{})
+
+type DSt is Data:
+  DD{bos: List<&2, P.BO>}
+  DMB{seen: Bool, num: U32, gen: U32, o: P.Obj, t: List<&2, P.BO>}
+
+# later-wins dedup: keep the first occurrence in encounter order, where the
+# encounter order lists the newest sections' objects first
+def dedup(+fuel: Nat, +st: DSt) -> List<&2, P.BO>:
+  match fuel:
+    case 0n:
+      Nil{}
+    case 1n+fp:
+      match st:
+        case DD{bos}:
+          match bos:
+            case Nil{}:
+              Nil{}
+            case Con{P.BO{num, gen, o}, t}:
+              dedup(fp, DMB{has_num(num, t), num, gen, o, t})
+        case DMB{seen, num, gen, o, t}:
+          match seen:
+            case True{}:
+              dedup(fp, DD{t})
+            case False{}:
+              Con{P.BO{num, gen, o}, dedup(fp, DD{t})}
+
+def seg_fin(a: Msgt) -> FullRes:
+  match a:
+    case MT{objs, xref, trailer, sx}:
+      FullRes{dedup(32768n, DD{objs}), xref, trailer, sx}
+
+def seg_fold(+fuel: Nat, +st: XAll) -> FullRes:
+  match fuel:
+    case 0n:
+      FullErr{"too many PDF sections (7.5.6)"}
+    case 1n+fp:
+      match st:
+        case XAS{pos, base, acc, full}:
+          match pos:
+            case Nil{}:
+              seg_fin(acc)
+            case Con{p, more}:
+              seg_fold(fp, XP{xseg(p, base, full), p, more, base, acc, full})
+        case XP{fr, p, pos, base, acc, full}:
+          match fr:
+            case FullErr{why}:
+              FullErr{why}
+            case FullRes{objs, xref, +trailer, sx}:
+              match acc:
+                case MT{a_objs, a_xre, a_tr, a_sx}:
+                  seg_fold(fp, XAS{pos, Nat.add(1n, p), MT{List.append(&2, P.BO, objs, a_objs), xref, trailer, sx}, full})
+
+def xfile_route(+bytes: List<&2, U32>, posl: List<&2, Nat>) -> FullRes:
+  match posl:
+    case Nil{}:
+      merge_xrefstm_once(merge_prev_once(xfile(P.plx_full(Lx.lex(bytes))), bytes), bytes, 0n)
+    case Con{p, more}:
+      seg_fold(32768n, XAS{posl, 0n, MT{Nil{}, Nil{}, P.ONil{}, U32.from_nat(0n)}, bytes})
+
+# no %%EOF at all: keep the pre-segmentation whole-file path verbatim
 def xfile_bytes(+bytes: List<&2, U32>) -> FullRes:
-  merge_xrefstm_once(merge_prev_once(xfile(P.plx_full(Lx.lex(bytes))), bytes), bytes)
+  xfile_route(bytes, eof_scan(llen_byts(bytes), bytes, E0{Nil{}, 0n}))

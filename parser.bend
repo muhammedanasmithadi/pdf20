@@ -304,10 +304,16 @@ def pnum0(num: Obj, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) 
 def pnum(neg: Bool, whole: U32, fnum: Nat, fden: Nat, pend: Pend, stk: List<&2, Fr>, tt: List<&2, Lx.Tok>, acc: List<&2, BO>) -> PST:
   match neg:
     case True{}:
-      # negative number: reject only in header context (PN1 = generation number)
+      # negative number: in the header gen-slot (FStart top, PN1 = waiting for
+      # the generation) it is the illegal generation (7.3.10); in value
+      # context it files the pending value and re-opens the chain with itself
       match pend:
         case PN1{a}:
-          PST{None{}, tt, Con{FBAD{"generation number shall be a non-negative integer (7.3.10)"}, stk}, PNil{}, acc}
+          match stk:
+            case Con{FStart{}, t2}:
+              PST{None{}, tt, Con{FBAD{"generation number shall be a non-negative integer (7.3.10)"}, stk}, PNil{}, acc}
+            case x:
+              PST{None{}, tt, pdisp(a, stk), PN1{ONum{neg, whole, fnum, fden}}, acc}
         case PN2{a, b}:
           PST{None{}, tt, pdisp(a, stk), PN2{b, ONum{neg, whole, fnum, fden}}, acc}
         case PNil{}:
@@ -324,10 +330,16 @@ def pnum(neg: Bool, whole: U32, fnum: Nat, fden: Nat, pend: Pend, stk: List<&2, 
             case PNil{}:
               pnum0(ONum{neg, whole, fnum, fden}, stk, tt, acc)
         case 1n+p:
-          # fractional number
+          # fractional number: same split as the negative case — a fraction
+          # can only be a generation in the header gen-slot (7.3.3: the
+          # generation is an integer); as a value it rolls the chain
           match pend:
             case PN1{a}:
-              PST{None{}, tt, Con{FBAD{"generation number shall be a non-negative integer (7.3.10)"}, stk}, PNil{}, acc}
+              match stk:
+                case Con{FStart{}, t2}:
+                  PST{None{}, tt, Con{FBAD{"generation number shall be a non-negative integer (7.3.10)"}, stk}, PNil{}, acc}
+                case x:
+                  PST{None{}, tt, pdisp(a, stk), PN1{ONum{neg, whole, fnum, fden}}, acc}
             case PN2{a, b}:
               PST{None{}, tt, pdisp(a, stk), PN2{b, ONum{neg, whole, fnum, fden}}, acc}
             case PNil{}:
@@ -867,6 +879,23 @@ def arg1(args: List<String>) -> String:
           h
         case Con{h2, t2}:
           h2
+
+# argv[1]/argv[2]: parser/runner args start at argv[1]; argv[0] is the
+# script name. One wrapper so a caller burns `args` in a single call.
+def args2p(args: List<String>) -> String & String:
+  match args:
+    case Con{h, t}:
+      match t:
+        case Con{h2, t2}:
+          match t2:
+            case Con{h3, t3}:
+              (h2, h3)
+            case Nil{}:
+              (SNil{}, SNil{})
+        case Nil{}:
+          (SNil{}, SNil{})
+    case Nil{}:
+      (SNil{}, SNil{})
 
 def pres_rpt(pr: PRes) -> String:
   match pr:
