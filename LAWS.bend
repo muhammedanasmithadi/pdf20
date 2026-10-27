@@ -297,3 +297,6 @@ law val_page_no_count:
 
 law val_page_mediabox_bad:
   {R.validate(X.FullRes{Con{P.BO{1, 0, P.ODict{Con{P.PE{"Type", P.OName{"Catalog"}}, Con{P.PE{"Pages", P.OInd{2, 0}}, Nil{}}}}}, Con{P.BO{2, 0, P.ODict{Con{P.PE{"Type", P.OName{"Pages"}}, Con{P.PE{"Kids", P.OArr{Con{P.OInd{3, 0}, Nil{}}}}, Con{P.PE{"Count", P.ONum{False{}, 1, 0n, 1n}}, Nil{}}}}}}, Con{P.BO{3, 0, P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Con{P.PE{"Parent", P.OInd{2, 0}}, Con{P.PE{"MediaBox", P.ONum{False{}, 42, 0n, 1n}}, Nil{}}}}}}, Nil{}}}}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 4, 0n, 1n}}, Con{P.PE{"Root", P.OInd{1, 0}}, Nil{}}}}, 0}) == R.VErr{"page MediaBox not an array (7.3.6, Table 30)"} : R.ValRes}
+
+law val_page_count_mismatch:
+  {R.validate(X.FullRes{Con{P.BO{1, 0, P.ODict{Con{P.PE{"Type", P.OName{"Catalog"}}, Con{P.PE{"Pages", P.OInd{2, 0}}, Nil{}}}}}, Con{P.BO{2, 0, P.ODict{Con{P.PE{"Type", P.OName{"Pages"}}, Con{P.PE{"Kids", P.OArr{Con{P.OInd{3, 0}, Nil{}}}}, Con{P.PE{"Count", P.ONum{False{}, 5, 0n, 1n}}, Nil{}}}}}}, Con{P.BO{3, 0, P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Con{P.PE{"Parent", P.OInd{2, 0}}, Nil{}}}}}, Nil{}}}}, Nil{}, P.ODict{Con{P.PE{"Size", P.ONum{False{}, 4, 0n, 1n}}, Con{P.PE{"Root", P.OInd{1, 0}}, Nil{}}}}, 0}) == R.VErr{"page tree Count does not match number of Kids (Table 30, 7.7.3)"} : R.ValRes}

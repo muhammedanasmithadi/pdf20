@@ -30,12 +30,12 @@ type VST is Data:
   VSz{sg: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
   VSzEnc{enc: Resolved, objs: List<&2, P.BO>, tels: List<&2, P.PEntry>}
   VSzO{sz: P.Obj, tels: List<&2, P.PEntry>, objs: List<&2, P.BO>}
-  VRes{rr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
+  VRes{rr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
   VResCat{rr: Resolved, els: List<&2, P.PEntry>, objs: List<&2, P.BO>}
   VCnt{cr: Resolved, dict_obj: P.Obj, objs: List<&2, P.BO>}
-  VPr{pr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VPrO{rt: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VMb{mr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
+  VPr{pr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VPrO{rt: P.Obj, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VMb{mr: Resolved, els: List<&2, P.PEntry>, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
   VRt{rg: Resolved, objs: List<&2, P.BO>}
   VRtO{rt: P.Obj, objs: List<&2, P.BO>}
   VCt{cr: Resolved, objs: List<&2, P.BO>}
@@ -50,15 +50,15 @@ type VST is Data:
   VNV{nv: Resolved, els: List<&2, P.PEntry>, objs: List<&2, P.BO>}
   VNVO{nt: P.Obj, els: List<&2, P.PEntry>, objs: List<&2, P.BO>}
   VNI{ip: Bool, els: List<&2, P.PEntry>, objs: List<&2, P.BO>}
-  VKg{kr: Resolved, objs: List<&2, P.BO>}
-  VKgO{ko: P.Obj, objs: List<&2, P.BO>}
-  VLp{arr: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VKr{kr: Resolved, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VKrO{ob: P.Obj, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VKt{td: Resolved, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VKtO{tp: P.Obj, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VKI{ip: Bool, rk: List<&2, P.Obj>, cnt: U32, objs: List<&2, P.BO>}
-  VFin{cnt: U32}
+  VKg{kr: Resolved, cnt_expected: U32, objs: List<&2, P.BO>}
+  VKgO{ko: P.Obj, cnt_expected: U32, objs: List<&2, P.BO>}
+  VLp{arr: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VKr{kr: Resolved, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VKrO{ob: P.Obj, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VKt{td: Resolved, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VKtO{tp: P.Obj, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VKI{ip: Bool, rk: List<&2, P.Obj>, cnt: U32, cnt_expected: U32, objs: List<&2, P.BO>}
+  VFin{eq: Bool, cnt: U32}
 
 # ---- U32_eq: Bool comparison wrapper for U32 (avoids computed scrutinee)
 
@@ -316,7 +316,7 @@ def trav(fuel: Nat, st: VST) -> ValRes:
                     case False{}:
                       match fnum:
                         case 0n:
-                          trav(p, VKg{dict_get("Kids", dict_obj), objs})
+                          trav(p, VKg{dict_get("Kids", dict_obj), whole, objs})
                         case 1n+p:
                           VErr{"page tree root Count shall be an integer (7.3.3, Table 30)"}
                     case True{}:
@@ -330,17 +330,17 @@ def trav(fuel: Nat, st: VST) -> ValRes:
               VErr{"page tree root missing Count (Table 30, 7.7.3)"}
 
         # -- Kids array (Table 30)
-        case VKg{kr, objs}:
+        case VKg{kr, cnt_expected, objs}:
           match kr:
             case Res{ko}:
-              trav(p, VKgO{ko, objs})
+              trav(p, VKgO{ko, cnt_expected, objs})
             case RErr{why}:
               VErr{"page tree root missing Kids (Table 30, 7.7.3)"}
 
-        case VKgO{ko, objs}:
+        case VKgO{ko, cnt_expected, objs}:
           match ko:
             case P.OArr{arr}:
-              trav(p, VLp{arr, 0, objs})
+              trav(p, VLp{arr, 0, cnt_expected, objs})
             case P.ONil{}:
               # a null-valued entry is the omitted entry (7.3.9)
               VErr{"page tree root missing Kids (Table 30, 7.7.3)"}
@@ -348,60 +348,60 @@ def trav(fuel: Nat, st: VST) -> ValRes:
               VErr{"page tree root Kids not an array (7.3.6, Table 30)"}
 
         # -- the kid loop
-        case VLp{arr, cnt, +objs}:
+        case VLp{arr, +cnt, cnt_expected, +objs}:
           match arr:
             case Nil{}:
-              trav(p, VFin{cnt})
+              trav(p, VFin{U32_eq(cnt, cnt_expected), cnt})
             case Con{num, rk}:
               match num:
                 case P.OInd{knum, kgen}:
-                  trav(p, VKr{resolve_obj(objs, knum, kgen, False{}, False{}, P.ONil{}), rk, cnt, objs})
+                  trav(p, VKr{resolve_obj(objs, knum, kgen, False{}, False{}, P.ONil{}), rk, cnt, cnt_expected, objs})
                 case x:
                   VErr{"page tree kid not an indirect reference (7.3.10, Table 30)"}
 
-        case VKr{kr, rk, cnt, objs}:
+        case VKr{kr, rk, cnt, cnt_expected, objs}:
           match kr:
             case Res{ob}:
-              trav(p, VKrO{ob, rk, cnt, objs})
+              trav(p, VKrO{ob, rk, cnt, cnt_expected, objs})
             case RErr{why}:
               VErr{why}
 
-        case VKrO{ob, rk, cnt, objs}:
+        case VKrO{ob, rk, cnt, cnt_expected, objs}:
           match ob:
             case P.ONil{}:
               # a null-valued page tree kid is the omitted entry (7.3.9)
               VErr{"page tree kid missing (Table 30, 7.7.3)"}
             case P.ODict{+els}:
               # check Resources (Table 34) before Parent (Table 30)
-              trav(p, VRes{dict_get("Resources", P.ODict{els}), els, rk, cnt, objs})
+              trav(p, VRes{dict_get("Resources", P.ODict{els}), els, rk, cnt, cnt_expected, objs})
             case x:
               VErr{"page tree kid not a dictionary (7.3.7, Table 30)"}
 
         # -- page Resources (Table 34): optional entry, must be a dictionary if present
-        case VRes{rr, +els, rk, cnt, objs}:
+        case VRes{rr, +els, rk, cnt, cnt_expected, objs}:
           match rr:
             case Res{r}:
               match r:
                 case P.ODict{res_els}:
-                  trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, objs})
+                  trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, cnt_expected, objs})
                 case x:
                   VErr{"page Resources not a dictionary (Table 34, 7.7.4)"}
             case RErr{why}:
-              trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, objs})
+              trav(p, VPr{dict_get("Parent", P.ODict{els}), els, rk, cnt, cnt_expected, objs})
 
         # -- page Parent (Table 30): required entry, indirect reference
-        case VPr{pr, els, rk, cnt, objs}:
+        case VPr{pr, els, rk, cnt, cnt_expected, objs}:
           match pr:
             case Res{rt}:
-              trav(p, VPrO{rt, els, rk, cnt, objs})
+              trav(p, VPrO{rt, els, rk, cnt, cnt_expected, objs})
             case RErr{why}:
               VErr{"page missing Parent (Table 30, 7.7.3)"}
 
-        case VPrO{rt, +els, rk, cnt, objs}:
+        case VPrO{rt, +els, rk, cnt, cnt_expected, objs}:
           match rt:
             case P.OInd{num, gen}:
               # check MediaBox (Table 30: required, inheritable)
-              trav(p, VMb{dict_get("MediaBox", P.ODict{els}), els, rk, cnt, objs})
+              trav(p, VMb{dict_get("MediaBox", P.ODict{els}), els, rk, cnt, cnt_expected, objs})
             case P.ONil{}:
               # a null-valued entry is the omitted entry (7.3.9)
               VErr{"page missing Parent (Table 30, 7.7.3)"}
@@ -409,45 +409,49 @@ def trav(fuel: Nat, st: VST) -> ValRes:
               VErr{"page Parent not an indirect reference (7.3.10, Table 30)"}
 
         # -- page MediaBox (Table 30): if present, must be an array
-        case VMb{mr, +els, rk, cnt, objs}:
+        case VMb{mr, +els, rk, cnt, cnt_expected, objs}:
           match mr:
             case Res{mb}:
               match mb:
                 case P.OArr{arr}:
-                  trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
+                  trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, cnt_expected, objs})
                 case x:
                   VErr{"page MediaBox not an array (7.3.6, Table 30)"}
             case RErr{why}:
               # MediaBox missing, might be inherited - OK for v0
-              trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, objs})
+              trav(p, VKt{dict_get("Type", P.ODict{els}), rk, cnt, cnt_expected, objs})
 
-        case VKt{td, rk, cnt, objs}:
+        case VKt{td, rk, cnt, cnt_expected, objs}:
           match td:
             case Res{tp}:
-              trav(p, VKtO{tp, rk, cnt, objs})
+              trav(p, VKtO{tp, rk, cnt, cnt_expected, objs})
             case RErr{why}:
               VErr{"page missing Type (Table 30, 7.7.3)"}
 
-        case VKtO{tp, rk, cnt, objs}:
+        case VKtO{tp, rk, cnt, cnt_expected, objs}:
           match tp:
             case P.OName{val}:
-              trav(p, VKI{String.eq(val, "Page"), rk, cnt, objs})
+              trav(p, VKI{String.eq(val, "Page"), rk, cnt, cnt_expected, objs})
             case P.ONil{}:
               # a null-valued entry is the omitted entry (7.3.9)
               VErr{"page missing Type (Table 30, 7.7.3)"}
             case x:
               VErr{"page Type not a name (7.3.5, Table 30)"}
 
-        case VKI{ip, rk, cnt, +objs}:
+        case VKI{ip, rk, cnt, cnt_expected, +objs}:
           match ip:
             case True{}:
-              trav(p, VLp{rk, U32.add(cnt, 1), objs})
+              trav(p, VLp{rk, U32.add(cnt, 1), cnt_expected, objs})
             case False{}:
               VErr{"page tree kid Type is not /Page (Table 30, 7.7.3)"}
 
         # -- terminal: done counting
-        case VFin{cnt}:
-          VOk{cnt}
+        case VFin{eq, cnt}:
+          match eq:
+            case True{}:
+              VOk{cnt}
+            case False{}:
+              VErr{"page tree Count does not match number of Kids (Table 30, 7.7.3)"}
 
 # ---- validate: entry point — fuel then the walker
 
