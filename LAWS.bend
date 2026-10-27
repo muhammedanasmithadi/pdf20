@@ -324,4 +324,4 @@ law ser_arr:
   {W.ser(10n, W.SIList{Con{P.ONum{False{}, 1, 0n, 1n}, Con{P.ONum{False{}, 2, 0n, 1n}, Nil{}}}}) == "1 2" : String}
 
 law ser_dict:
-  {W.ser(10n, W.SIObj{P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Nil{}}}}) == "<< /Type /Page  >>" : String}
+  {W.ser(10n, W.SIObj{P.ODict{Con{P.PE{"Type", P.OName{"Page"}}, Nil{}}}}) == "<< /Type /Page >>" : String}
