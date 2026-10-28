@@ -171,7 +171,7 @@ def llen(list: List<&2, P.BO>) -> Nat:
 def pgval(fuel: Nat, st: PGST) -> ValRes:
   match fuel:
     case 0n:
-      VErr{"out of validation fuel"}
+      VErr{"page tree exceeds depth limit or contains a cycle (Table 30, 7.7.3)"}
     case 1n+p:
       match st:
 
