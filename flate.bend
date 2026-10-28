@@ -899,9 +899,71 @@ def ascii_hex_decode(bs: List<&2, U32>) -> List<&2, U32>:
 
 
 # Apply a single filter by name.
+
+
+
+def head_of(bs: List<&2, U32>) -> U32:
+  match bs:
+    case Nil{}: 0
+    case Con{b, t}: b
+
+def tail_of(bs: List<&2, U32>) -> List<&2, U32>:
+  match bs:
+    case Nil{}: Nil{}
+    case Con{b, t}: t
+
+def rl_go(fuel: Nat, bs: List<&2, U32>, mode: Nat, n: U32, +byte: U32, +acc: List<&2, U32>) -> List<&2, U32>:
+  match fuel:
+    case 0n:
+      List.reverse(&2, U32, acc)
+    case 1n+ +fp:
+      match bs:
+        case Nil{}:
+          List.reverse(&2, U32, acc)
+        case Con{+b, +t}:
+          match mode:
+            case 0n:
+              # decode mode: classify b, compute next params, recurse once
+              +is_eod : Bool = U32.is_eq(b, 128)
+              +is_copy : Bool = U32.is_le(b, 127)
+              next_mode : Nat = Bool.pick(Nat, is_eod, 3n, Bool.pick(Nat, is_copy, 1n, 2n))
+              next_n : U32 = Bool.pick(U32, is_eod, U32.from_nat(0n),
+                Bool.pick(U32, is_copy, U32.add(b, 1), U32.sub(257, b)))
+              next_byte : U32 = Bool.pick(U32, is_eod, U32.from_nat(0n),
+                Bool.pick(U32, is_copy, U32.from_nat(0n), head_of(t)))
+              next_bs : List<&2, U32> = Bool.pick(List<&2, U32>, is_eod, t,
+                Bool.pick(List<&2, U32>, is_copy, t, tail_of(t)))
+              rl_go(fp, next_bs, next_mode, next_n, next_byte, acc)
+            case 1n:
+              # copy mode
+              match n:
+                case 0:
+                  rl_go(fp, bs, 0n, U32.from_nat(0n), U32.from_nat(0n), acc)
+                case _:
+                  rl_go(fp, t, 1n, U32.sub(n, 1), U32.from_nat(0n), Con{b, acc})
+            case 2n:
+              # repeat mode
+              match n:
+                case 0:
+                  rl_go(fp, bs, 0n, U32.from_nat(0n), U32.from_nat(0n), acc)
+                case _:
+                  rl_go(fp, bs, 2n, U32.sub(n, 1), byte, Con{byte, acc})
+            case 3n+p:
+              List.reverse(&2, U32, acc)
+
+def run_length_decode(bs: List<&2, U32>) -> List<&2, U32>:
+  rl_go(32768n, bs, 0n, U32.from_nat(0n), U32.from_nat(0n), Nil{})
+
+def apply_filter_by_name3(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
+  eq_rl : Bool = String.eq(name, "RunLengthDecode")
+  Bool.pick(List<&2, U32>, eq_rl, run_length_decode(body), body)
+
+
+# ---- RunLengthDecode (7.4.4) ----
 def apply_filter_by_name2(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
   eq_hex : Bool = String.eq(name, "ASCIIHexDecode")
-  Bool.pick(List<&2, U32>, eq_hex, ascii_hex_decode(body), body)
+  Bool.pick(List<&2, U32>, eq_hex, ascii_hex_decode(body),
+    apply_filter_by_name3(name, body))
 
 # Helper: dispatch on a pre-computed Bool (binder) to avoid eager evaluation
 # of both filter branches.
