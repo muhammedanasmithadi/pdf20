@@ -954,12 +954,154 @@ def rl_go(fuel: Nat, bs: List<&2, U32>, mode: Nat, n: U32, +byte: U32, +acc: Lis
 def run_length_decode(bs: List<&2, U32>) -> List<&2, U32>:
   rl_go(32768n, bs, 0n, U32.from_nat(0n), U32.from_nat(0n), Nil{})
 
+# ---- ASCII85Decode (7.4.3) ----
+
+# ASCII85Decode (7.4.3)
+# 5 ASCII85 chars -> 4 bytes. 'z' = 4 zero bytes. '~>' terminates.
+
+def a85_val(+b: U32) -> U32:
+  is_valid : Bool = Bool.and(U32.is_ge(b, 33), U32.is_le(b, 117))
+  Bool.pick(U32, is_valid, U32.sub(b, 33), 85)
+
+def a85_is_space(+b: U32) -> Bool:
+  Bool.or(Bool.or(U32.is_eq(b, 9), U32.is_eq(b, 10)),
+          Bool.or(U32.is_eq(b, 13), U32.is_eq(b, 32)))
+
+# Decode a complete 5-char group (reversed) into 4 bytes
+def a85_decode_group(grp: List<&2, U32>) -> List<&2, U32>:
+  match grp:
+    case Con{c4, Con{c3, Con{c2, Con{c1, Con{c0, Nil{}}}}}}:
+      t0 : U32 = U32.mul(c0, 52200625)
+      t1 : U32 = U32.mul(c1, 614125)
+      t2 : U32 = U32.mul(c2, 7225)
+      t3 : U32 = U32.mul(c3, 85)
+      +tup : U32 = U32.add(U32.add(U32.add(U32.add(t0, t1), t2), t3), c4)
+      b0 : U32 = U32.shrn(tup, 24n)
+      b1 : U32 = U32.and(U32.shrn(tup, 16n), 255)
+      b2 : U32 = U32.and(U32.shrn(tup, 8n), 255)
+      b3 : U32 = U32.and(tup, 255)
+      Con{b0, Con{b1, Con{b2, Con{b3, Nil{}}}}}
+    case _:
+      Nil{}
+
+# Flush partial group at end/terminator
+def a85_flush(group: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
+  match group:
+    case Nil{}:
+      List.reverse(&2, U32, acc)
+    case Con{g0, Nil{}}:
+      +tup : U32 = U32.mul(g0, 52200625)
+      List.reverse(&2, U32, Con{U32.shrn(tup, 24n), acc})
+    case Con{g0, Con{g1, Nil{}}}:
+      t0 : U32 = U32.mul(g0, 52200625)
+      t1 : U32 = U32.mul(g1, 614125)
+      +tup : U32 = U32.add(t0, t1)
+      b0 : U32 = U32.shrn(tup, 24n)
+      b1 : U32 = U32.and(U32.shrn(tup, 16n), 255)
+      List.reverse(&2, U32, Con{b1, Con{b0, acc}})
+    case Con{g0, Con{g1, Con{g2, Nil{}}}}:
+      t0 : U32 = U32.mul(g0, 52200625)
+      t1 : U32 = U32.mul(g1, 614125)
+      t2 : U32 = U32.mul(g2, 7225)
+      +tup : U32 = U32.add(U32.add(t0, t1), t2)
+      b0 : U32 = U32.shrn(tup, 24n)
+      b1 : U32 = U32.and(U32.shrn(tup, 16n), 255)
+      b2 : U32 = U32.and(U32.shrn(tup, 8n), 255)
+      List.reverse(&2, U32, Con{b2, Con{b1, Con{b0, acc}}})
+    case Con{g0, Con{g1, Con{g2, Con{g3, Nil{}}}}}:
+      t0 : U32 = U32.mul(g0, 52200625)
+      t1 : U32 = U32.mul(g1, 614125)
+      t2 : U32 = U32.mul(g2, 7225)
+      t3 : U32 = U32.mul(g3, 85)
+      +tup : U32 = U32.add(U32.add(U32.add(t0, t1), t2), t3)
+      b0 : U32 = U32.shrn(tup, 24n)
+      b1 : U32 = U32.and(U32.shrn(tup, 16n), 255)
+      b2 : U32 = U32.and(U32.shrn(tup, 8n), 255)
+      b3 : U32 = U32.and(tup, 255)
+      List.reverse(&2, U32, Con{b3, Con{b2, Con{b1, Con{b0, acc}}}})
+    case _:
+      List.reverse(&2, U32, acc)
+
+def append_bytes(bs: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
+  match bs:
+    case Nil{}: acc
+    case Con{+b, +t}: append_bytes(t, Con{b, acc})
+
+# Helper: check if next byte is '>'
+def next_is_gt(bs: List<&2, U32>) -> Bool:
+  match bs:
+    case Con{+b, +t}: U32.is_eq(b, 62)
+    case Nil{}: False{}
+
+# Main decode: process one char at a time.
+# group is accumulated in collection order (oldest first).
+# Uses computed params + single recursive call to avoid exponential blowup.
+def a85_decode5(c0: U32, c1: U32, c2: U32, c3: U32, c4: U32) -> List<&2, U32>:
+  t0 : U32 = U32.mul(c0, 52200625)
+  t1 : U32 = U32.mul(c1, 614125)
+  t2 : U32 = U32.mul(c2, 7225)
+  t3 : U32 = U32.mul(c3, 85)
+  +tup : U32 = U32.add(U32.add(U32.add(U32.add(t0, t1), t2), t3), c4)
+  b0 : U32 = U32.shrn(tup, 24n)
+  b1 : U32 = U32.and(U32.shrn(tup, 16n), 255)
+  b2 : U32 = U32.and(U32.shrn(tup, 8n), 255)
+  b3 : U32 = U32.and(tup, 255)
+  Con{b0, Con{b1, Con{b2, Con{b3, Nil{}}}}}
+
+def a85_decode5_from_reversed(grp: List<&2, U32>) -> List<&2, U32>:
+  match grp:
+    case Con{c4, Con{c3, Con{c2, Con{c1, Con{c0, Nil{}}}}}}:
+      a85_decode5(c0, c1, c2, c3, c4)
+    case _:
+      Nil{}
+
+def a85_go(bs: List<&2, U32>, +group: List<&2, U32>, +acc: List<&2, U32>) -> List<&2, U32>:
+  match bs:
+    case Nil{}:
+      a85_flush(group, acc)
+    case Con{+b, +t}:
+      is_term : Bool = U32.is_eq(b, 126)
+      next_gt : Bool = next_is_gt(t)
+      is_terminator : Bool = Bool.and(is_term, next_gt)
+      is_z : Bool = U32.is_eq(b, 122)
+      group_empty : Bool = U32.is_eq(U32.from_nat(List.length(&2, U32, group)), 0)
+      z_valid : Bool = Bool.and(is_z, group_empty)
+      is_space : Bool = a85_is_space(b)
+      +v : U32 = a85_val(b)
+      is_bad : Bool = U32.is_eq(v, 85)
+      gcount : Nat = List.length(&2, U32, group)
+      will_be_5 : Bool = U32.is_eq(U32.from_nat(gcount), 4)
+      Bool.pick(List<&2, U32>, is_terminator,
+        a85_flush(group, acc),
+        Bool.pick(List<&2, U32>, z_valid,
+          a85_go(t, Nil{}, Con{0, Con{0, Con{0, Con{0, acc}}}}),
+          Bool.pick(List<&2, U32>, is_space,
+            a85_go(t, group, acc),
+            Bool.pick(List<&2, U32>, is_bad,
+              a85_go(t, group, acc),
+              Bool.pick(List<&2, U32>, will_be_5,
+                a85_go(t, Nil{}, append_bytes(a85_decode5_from_reversed(Con{v, group}), acc)),
+                a85_go(t, Con{v, group}, acc))))))
+
+def ascii85_decode(bs: List<&2, U32>) -> List<&2, U32>:
+  a85_go(bs, Nil{}, Nil{})
+
+def first_byte(bs: List<&2, U32>) -> U32:
+  match bs:
+    case Con{b, t}: b
+    case Nil{}: 0
+
+
+def apply_filter_by_name4(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
+  eq_a85 : Bool = String.eq(name, "ASCII85Decode")
+  Bool.pick(List<&2, U32>, eq_a85, ascii85_decode(body), body)
+
 def apply_filter_by_name3(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
   eq_rl : Bool = String.eq(name, "RunLengthDecode")
-  Bool.pick(List<&2, U32>, eq_rl, run_length_decode(body), body)
+  Bool.pick(List<&2, U32>, eq_rl, run_length_decode(body),
+    apply_filter_by_name4(name, body))
 
 
-# ---- RunLengthDecode (7.4.4) ----
 def apply_filter_by_name2(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
   eq_hex : Bool = String.eq(name, "ASCIIHexDecode")
   Bool.pick(List<&2, U32>, eq_hex, ascii_hex_decode(body),
