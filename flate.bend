@@ -1162,3 +1162,7 @@ def decode_stream_body(d: P.Obj, body: List<&2, U32>) -> List<&2, U32>:
     case x: body
 
 # ---- ASCIIHexDecode (7.4.2) ----
+# ---- ASCII85Decode (7.4.3) ----
+
+# ASCII85Decode (7.4.3)
+# 5 ASCII85 chars -> 4 bytes. 'z' = 4 zero bytes. '~>' terminates.
