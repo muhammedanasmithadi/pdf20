@@ -856,23 +856,97 @@ def filter_is_flate(f: P.Obj) -> Bool:
     case P.OArr{els}:
       arr_contains_flate(els)
     case x: False{}
+def hex_val(+b: U32) -> U32:
+  is_d : Bool = Bool.and(U32.is_ge(b, 48), U32.is_le(b, 57))
+  is_u : Bool = Bool.and(U32.is_ge(b, 65), U32.is_le(b, 70))
+  is_l : Bool = Bool.and(U32.is_ge(b, 97), U32.is_le(b, 102))
+  Bool.pick(U32, is_d, U32.sub(b, 48),
+    Bool.pick(U32, is_u, U32.sub(b, 55),
+      Bool.pick(U32, is_l, U32.sub(b, 87), 16)))
 
-# Decode a stream body given the stream dictionary and raw body bytes.
-# Returns decoded bytes if FlateDecode, or raw bytes if no filter / unsupported.
-def decode_stream_body_filt_bool(+is_flate: Bool, body: List<&2, U32>) -> List<&2, U32>:
-  match is_flate:
-    case True{}: inflate(body)
-    case False{}: body
+def is_ws(+b: U32) -> Bool:
+  Bool.or(Bool.or(U32.is_eq(b, 9), U32.is_eq(b, 10)),
+          Bool.or(U32.is_eq(b, 13), U32.is_eq(b, 32)))
 
-def decode_stream_body_filt(filt: P.Obj, body: List<&2, U32>) -> List<&2, U32>:
-  decode_stream_body_filt_bool(filter_is_flate(filt), body)
+def ah_go(bs: List<&2, U32>, +acc: List<&2, U32>, +hi: U32, +has: Bool) -> List<&2, U32>:
+  match bs:
+    case Nil{}:
+      Bool.pick(List<&2, U32>, has,
+        List.reverse(&2, U32, Con{U32.shln(hi, 4n), acc}),
+        List.reverse(&2, U32, acc))
+    case Con{+b, +t}:
+      is_term : Bool = U32.is_eq(b, 62)
+      ws : Bool = is_ws(b)
+      +hv : U32 = hex_val(b)
+      is_bad : Bool = U32.is_eq(hv, 16)
+      Bool.pick(List<&2, U32>, is_term,
+        Bool.pick(List<&2, U32>, has,
+          List.reverse(&2, U32, Con{U32.shln(hi, 4n), acc}),
+          List.reverse(&2, U32, acc)),
+        Bool.pick(List<&2, U32>, ws,
+          ah_go(t, acc, hi, has),
+          Bool.pick(List<&2, U32>, is_bad,
+            Bool.pick(List<&2, U32>, has,
+              ah_go(t, acc, hi, True{}),
+              ah_go(t, acc, 0, False{})),
+            Bool.pick(List<&2, U32>, has,
+              ah_go(t, Con{U32.or(U32.shln(hi, 4n), hv), acc}, 0, False{}),
+              ah_go(t, acc, hv, True{})))))
+
+def ascii_hex_decode(bs: List<&2, U32>) -> List<&2, U32>:
+  ah_go(bs, Nil{}, 0, False{})
+
+
+
+# Apply a single filter by name.
+def apply_filter_by_name2(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
+  eq_hex : Bool = String.eq(name, "ASCIIHexDecode")
+  Bool.pick(List<&2, U32>, eq_hex, ascii_hex_decode(body), body)
+
+def apply_filter_by_name(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
+  eq_flate : Bool = String.eq(name, "FlateDecode")
+  Bool.pick(List<&2, U32>, eq_flate, inflate(body),
+    apply_filter_by_name2(name, body))
+
+# Apply a filter spec (name or array) to a body.
+# Arrays are applied in reverse order when decoding (last filter first).
+def apply_filter_name(f: P.Obj, body: List<&2, U32>) -> List<&2, U32>:
+  match f:
+    case P.OName{n}:
+      apply_filter_by_name(n, body)
+    case x: body
+
+
+def apply_filter_chain_fwd(els: List<&2, P.Obj>, body: List<&2, U32>) -> List<&2, U32>:
+  match els:
+    case Nil{}: body
+    case Con{f, rest}:
+      # dispatch f by name (avoid mutual recursion with apply_filter)
+      decoded : List<&2, U32> = apply_filter_name(f, body)
+      apply_filter_chain_fwd(rest, decoded)
+
+def apply_filter_chain(els: List<&2, P.Obj>, body: List<&2, U32>) -> List<&2, U32>:
+  # Filters applied in order when encoding; decode in reverse.
+  # Reverse the list, then apply each filter in sequence.
+  rev : List<&2, P.Obj> = List.reverse(&2, P.Obj, els)
+  apply_filter_chain_fwd(rev, body)
+
+def apply_filter(filt: P.Obj, body: List<&2, U32>) -> List<&2, U32>:
+  match filt:
+    case P.OName{n}: apply_filter_by_name(n, body)
+    case P.OArr{els}: apply_filter_chain(els, body)
+    case x: body
+
+
 
 def decode_stream_body_dict(els: List<&2, P.PEntry>, body: List<&2, U32>) -> List<&2, U32>:
   filt = dict_find_key(els, "Filter")
-  decode_stream_body_filt(filt, body)
+  apply_filter(filt, body)
 
 def decode_stream_body(d: P.Obj, body: List<&2, U32>) -> List<&2, U32>:
   match d:
     case P.ODict{els}:
       decode_stream_body_dict(els, body)
     case x: body
+
+# ---- ASCIIHexDecode (7.4.2) ----
