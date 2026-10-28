@@ -1590,12 +1590,29 @@ def xs_w_case(robj: List<&2, P.BO>, d: P.Obj, dat: String, sx: U32, ix: Bool, io
       xs_w_ok(robj, d, dat, sx, ix, iox, szi, soz, a, b, c)
 
 
-def xs_check(robj: List<&2, P.BO>, d: P.Obj, dat: String, sx: U32, sd: XSD) -> FullRes:
+# ---- bytes -> String (reverse of P.str_byts), for feeding decoded stream bodies
+# back into the string-based xref stream parser.
+
+def bytes_to_str_go(bs: List<&2, U32>, acc: String) -> String:
+  match bs:
+    case Nil{}:
+      String.reverse(acc)
+    case Con{h, t}:
+      bytes_to_str_go(t, SCon{Char.from_u32(h), acc})
+
+def bytes_to_str(bs: List<&2, U32>) -> String:
+  bytes_to_str_go(bs, SNil{})
+
+def xs_check(robj: List<&2, P.BO>, +d: P.Obj, dat: String, sx: U32, sd: XSD) -> FullRes:
   match sd:
     case XSDok{filt, wf, wo, ix, iox, szi, soz}:
       match filt:
         case True{}:
-          FullErr{"cross-reference streams stored with a Filter are not supported in v0 (Table 5 Filter, 7.4)"}
+          # decode the body (FlateDecode supported; other filters fall through
+          # to raw bytes) and continue with the decoded stream
+          decoded_bytes : List<&2, U32> = F.decode_stream_body(d, P.str_byts(dat))
+          decoded_str : String = bytes_to_str(decoded_bytes)
+          xs_w_case(robj, d, decoded_str, sx, ix, iox, szi, soz, xs_w(wo))
         case False{}:
           match wf:
             case False{}:
