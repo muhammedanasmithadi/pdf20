@@ -2,6 +2,7 @@ import Base
 import ./lex.bend as Pdf
 import ./parser.bend as P
 import ./xref.bend as X
+import ./content.bend as C
 
 # Benchmark entry: read one PDF path (argv[1]), lex it (clause 7.2/7.3),
 # report "OK <tokens> <bytes>" or "ERR <why> <bytes>" on one line.
@@ -190,7 +191,7 @@ def xref_file(path: List<&2, U32>) -> IO(X.FullRes & U32):
 def full_report(lr: Pdf.Lex & U32, pr: P.PRes & U32, xr: X.FullRes & U32) -> String:
   match xr:
     case (+fr, sz):
-      ((lex_rpt(lr) ++ " | " ++ parse_rpt(pr)) ++ " | " ++ X.fullres_rpt(fr, sz) ++ " | DECODE " ++ X.stream_decode_report_objs(X.objs_of(fr)))
+      ((((lex_rpt(lr) ++ " | " ++ parse_rpt(pr)) ++ " | " ++ X.fullres_rpt(fr, sz)) ++ " | DECODE " ++ X.stream_decode_report_objs(X.objs_of(fr))) ++ " | " ++ C.content_report_of(fr))
 
 def main() -> IO(Unit):
   do IO<Unit>:
