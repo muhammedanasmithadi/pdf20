@@ -903,10 +903,18 @@ def apply_filter_by_name2(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
   eq_hex : Bool = String.eq(name, "ASCIIHexDecode")
   Bool.pick(List<&2, U32>, eq_hex, ascii_hex_decode(body), body)
 
+# Helper: dispatch on a pre-computed Bool (binder) to avoid eager evaluation
+# of both filter branches.
+def apply_filter_by_name_dispatch(is_flate: Bool, name: String, +body: List<&2, U32>) -> List<&2, U32>:
+  match is_flate:
+    case True{}:
+      inflate(body)
+    case False{}:
+      apply_filter_by_name2(name, body)
+
 def apply_filter_by_name(+name: String, +body: List<&2, U32>) -> List<&2, U32>:
   eq_flate : Bool = String.eq(name, "FlateDecode")
-  Bool.pick(List<&2, U32>, eq_flate, inflate(body),
-    apply_filter_by_name2(name, body))
+  apply_filter_by_name_dispatch(eq_flate, name, body)
 
 # Apply a filter spec (name or array) to a body.
 # Arrays are applied in reverse order when decoding (last filter first).
